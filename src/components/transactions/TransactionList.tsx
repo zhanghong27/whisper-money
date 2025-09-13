@@ -35,16 +35,18 @@ const TransactionList = ({ transactions, onEditTransaction }: TransactionListPro
     }).format(amount);
   };
 
-  const getTypeColor = (type: string) => {
+  type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline'
+
+  const getTypeColor = (type: Transaction['type']): BadgeVariant => {
     switch (type) {
       case 'income':
-        return 'success';
+        return 'default'
       case 'expense':
-        return 'destructive';
+        return 'destructive'
       case 'transfer':
-        return 'secondary';
+        return 'secondary'
       default:
-        return 'secondary';
+        return 'secondary'
     }
   };
 
@@ -78,7 +80,7 @@ const TransactionList = ({ transactions, onEditTransaction }: TransactionListPro
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Calendar className="h-5 w-5" />
-          最近交易
+          交易记录
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -97,7 +99,7 @@ const TransactionList = ({ transactions, onEditTransaction }: TransactionListPro
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <span className="font-medium">{transaction.description || transaction.category.name}</span>
-                  <Badge variant={getTypeColor(transaction.type) as any} className="text-xs">
+                  <Badge variant={getTypeColor(transaction.type)} className="text-xs">
                     {getTypeText(transaction.type)}
                   </Badge>
                 </div>

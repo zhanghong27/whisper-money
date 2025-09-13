@@ -32,7 +32,7 @@ const DashboardStats = ({ stats }: DashboardStatsProps) => {
         <CardContent>
           <div className="text-2xl font-bold">{formatCurrency(stats.totalBalance)}</div>
           <p className="text-xs text-muted-foreground mt-1">
-            所有账户总计
+            所选月份净额（收入-支出）
           </p>
         </CardContent>
       </Card>

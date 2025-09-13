@@ -71,10 +71,11 @@ const AddTransactionDialog = ({ open, onOpenChange, onTransactionAdded }: AddTra
         ...cat,
         type: cat.type as 'income' | 'expense'
       })));
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
       toast({
         title: "加载数据失败",
-        description: error.message,
+        description: message,
         variant: "destructive",
       });
     }
@@ -137,10 +138,11 @@ const AddTransactionDialog = ({ open, onOpenChange, onTransactionAdded }: AddTra
       
       onTransactionAdded();
       onOpenChange(false);
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
       toast({
         title: "添加失败",
-        description: error.message,
+        description: message,
         variant: "destructive",
       });
     } finally {

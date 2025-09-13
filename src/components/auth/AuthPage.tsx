@@ -50,10 +50,11 @@ const AuthPage = () => {
           description: "请检查您的邮箱以确认账户。",
         });
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
       toast({
         title: "注册失败",
-        description: error.message,
+        description: message,
         variant: "destructive",
       });
     } finally {
@@ -84,10 +85,11 @@ const AuthPage = () => {
       if (data.user) {
         window.location.href = '/';
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
       toast({
         title: "登录失败",
-        description: error.message,
+        description: message,
         variant: "destructive",
       });
     } finally {
