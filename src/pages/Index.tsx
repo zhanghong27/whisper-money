@@ -12,7 +12,13 @@ import ImportBocDialog from "@/components/transactions/ImportBocDialog";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, RefreshCw } from "lucide-react";
+import { 
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger 
+} from "@/components/ui/dropdown-menu";
+import { Loader2, RefreshCw, ChevronDown } from "lucide-react";
 import { format } from 'date-fns';
 
 interface StatsData {
@@ -212,18 +218,32 @@ const Index = () => {
               }}
               className="w-[150px]"
             />
-            <Button onClick={() => setShowImportAlipay(true)}>
-              导入支付宝
-            </Button>
-            <Button onClick={() => setShowImportWechat(true)}>
-              导入微信
-            </Button>
-            <Button onClick={() => setShowImportCmb(true)}>
-              导入招行
-            </Button>
-            <Button onClick={() => setShowImportBoc(true)}>
-              导入中行
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline">
+                  导入数据
+                  <ChevronDown className="ml-2 h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-48">
+                <DropdownMenuItem onClick={() => setShowImportAlipay(true)}>
+                  <span className="mr-2">💰</span>
+                  导入支付宝
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setShowImportWechat(true)}>
+                  <span className="mr-2">💚</span>
+                  导入微信
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setShowImportCmb(true)}>
+                  <span className="mr-2">🏦</span>
+                  导入招行
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setShowImportBoc(true)}>
+                  <span className="mr-2">🏛️</span>
+                  导入中行
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               variant="outline"
               size="icon"
