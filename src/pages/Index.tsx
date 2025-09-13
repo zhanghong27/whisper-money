@@ -25,6 +25,7 @@ interface StatsData {
   totalBalance: number;
   monthlyIncome: number;
   monthlyExpense: number;
+  totalSavings: number;
   currency: string;
 }
 
@@ -56,6 +57,7 @@ const Index = () => {
     totalBalance: 0,
     monthlyIncome: 0,
     monthlyExpense: 0,
+    totalSavings: 0,
     currency: 'CNY'
   });
   const [selectedMonth, setSelectedMonth] = useState<Date>(new Date());
@@ -102,6 +104,9 @@ const Index = () => {
       .eq('user_id', user.id)
       .eq('is_deleted', false);
 
+    // Calculate total savings (sum of all account balances)
+    const totalSavings = accounts?.reduce((sum, account) => sum + Number(account.balance), 0) || 0;
+
     // Get monthly income and expense
     // Calculate [startOfMonth, startOfNextMonth)
     const base = selectedMonth ?? new Date();
@@ -129,6 +134,7 @@ const Index = () => {
       totalBalance,
       monthlyIncome,
       monthlyExpense,
+      totalSavings,
       currency: accounts?.[0]?.currency || 'CNY'
     });
   };
