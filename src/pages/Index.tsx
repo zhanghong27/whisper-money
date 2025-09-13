@@ -204,14 +204,16 @@ const Index = () => {
       user={user} 
       onAddTransaction={() => setShowAddTransaction(true)}
     >
-      <div className="space-y-6 pb-20 md:pb-6">
-        {/* Header with refresh */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">财务概览</h1>
-            <p className="text-muted-foreground">管理您的收入和支出</p>
+      <div className="space-y-4 md:space-y-6 pb-20 md:pb-6 px-4 md:px-6">
+        {/* Header with refresh - 移动端优化 */}
+        <div className="flex flex-col space-y-4 md:space-y-0 md:flex-row md:items-center md:justify-between">
+          <div className="animate-fade-in">
+            <h1 className="text-xl md:text-2xl font-bold">财务概览</h1>
+            <p className="text-sm md:text-base text-muted-foreground">管理您的收入和支出</p>
           </div>
-          <div className="flex items-center gap-2">
+          
+          {/* 移动端控制按钮区域 */}
+          <div className="flex flex-col space-y-2 md:space-y-0 md:flex-row md:items-center md:gap-2">
             <Input
               type="month"
               value={format(selectedMonth, 'yyyy-MM')}
@@ -222,42 +224,48 @@ const Index = () => {
                   if (!isNaN(d.getTime())) setSelectedMonth(d);
                 }
               }}
-              className="w-[150px]"
+              className="w-full md:w-[150px]"
             />
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline">
-                  导入数据
-                  <ChevronDown className="ml-2 h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-48">
-                <DropdownMenuItem onClick={() => setShowImportAlipay(true)}>
-                  <span className="mr-2">💰</span>
-                  导入支付宝
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setShowImportWechat(true)}>
-                  <span className="mr-2">💚</span>
-                  导入微信
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setShowImportCmb(true)}>
-                  <span className="mr-2">🏦</span>
-                  导入招行
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setShowImportBoc(true)}>
-                  <span className="mr-2">🏛️</span>
-                  导入中行
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={fetchDashboardData}
-              disabled={loading}
-            >
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            </Button>
+            
+            <div className="flex gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="flex-1 md:flex-none">
+                    <span className="md:hidden">导入</span>
+                    <span className="hidden md:inline">导入数据</span>
+                    <ChevronDown className="ml-2 h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-48 z-50 bg-background border shadow-lg">
+                  <DropdownMenuItem onClick={() => setShowImportAlipay(true)}>
+                    <span className="mr-2">💰</span>
+                    导入支付宝
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setShowImportWechat(true)}>
+                    <span className="mr-2">💚</span>
+                    导入微信
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setShowImportCmb(true)}>
+                    <span className="mr-2">🏦</span>
+                    导入招行
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setShowImportBoc(true)}>
+                    <span className="mr-2">🏛️</span>
+                    导入中行
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={fetchDashboardData}
+                disabled={loading}
+                className="hover-scale"
+              >
+                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
           </div>
         </div>
 

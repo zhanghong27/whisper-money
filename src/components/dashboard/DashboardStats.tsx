@@ -28,16 +28,16 @@ const DashboardStats = ({ stats }: DashboardStatsProps) => {
   const netIncome = stats.monthlyIncome - stats.monthlyExpense;
 
   return (
-    <div className="space-y-4">
-      {/* 累计攒钱卡片 */}
-      <Card className="shadow-card">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+    <div className="space-y-3 md:space-y-4">
+      {/* 累计攒钱卡片 - 移动端优化 */}
+      <Card className="shadow-card animate-fade-in">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3 px-4 md:px-6">
           <CardTitle className="text-sm font-medium">累计攒钱</CardTitle>
           <Button
             variant="ghost"
             size="icon"
             onClick={() => setShowSavings(!showSavings)}
-            className="h-6 w-6"
+            className="h-8 w-8 hover-scale"
           >
             {showSavings ? (
               <Eye className="h-4 w-4 text-muted-foreground" />
@@ -46,8 +46,8 @@ const DashboardStats = ({ stats }: DashboardStatsProps) => {
             )}
           </Button>
         </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold">
+        <CardContent className="px-4 md:px-6 pb-4">
+          <div className="text-xl md:text-2xl font-bold">
             {showSavings ? formatCurrency(stats.totalSavings) : '****'}
           </div>
           <p className="text-xs text-muted-foreground mt-1">
@@ -56,28 +56,28 @@ const DashboardStats = ({ stats }: DashboardStatsProps) => {
         </CardContent>
       </Card>
 
-      {/* 其他三个统计卡片 */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card className="shadow-card">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+      {/* 其他三个统计卡片 - 移动端垂直排列，桌面端水平排列 */}
+      <div className="grid gap-3 md:gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
+        <Card className="shadow-card animate-fade-in hover-scale">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3 px-4 md:px-6">
             <CardTitle className="text-sm font-medium">总余额</CardTitle>
             <Wallet className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(stats.totalBalance)}</div>
+          <CardContent className="px-4 md:px-6 pb-4">
+            <div className="text-xl md:text-2xl font-bold">{formatCurrency(stats.totalBalance)}</div>
             <p className="text-xs text-muted-foreground mt-1">
               所选月份净额（收入-支出）
             </p>
           </CardContent>
         </Card>
 
-        <Card className="shadow-card">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <Card className="shadow-card animate-fade-in hover-scale">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3 px-4 md:px-6">
             <CardTitle className="text-sm font-medium">本月收入</CardTitle>
             <TrendingUp className="h-4 w-4 text-success" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-success">
+          <CardContent className="px-4 md:px-6 pb-4">
+            <div className="text-xl md:text-2xl font-bold text-success">
               {formatCurrency(stats.monthlyIncome)}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
@@ -86,13 +86,13 @@ const DashboardStats = ({ stats }: DashboardStatsProps) => {
           </CardContent>
         </Card>
 
-        <Card className="shadow-card">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <Card className="shadow-card animate-fade-in hover-scale sm:col-span-2 md:col-span-1">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3 px-4 md:px-6">
             <CardTitle className="text-sm font-medium">本月支出</CardTitle>
             <TrendingDown className="h-4 w-4 text-destructive" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-destructive">
+          <CardContent className="px-4 md:px-6 pb-4">
+            <div className="text-xl md:text-2xl font-bold text-destructive">
               {formatCurrency(stats.monthlyExpense)}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
