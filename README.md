@@ -71,3 +71,51 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+
+---
+
+## iOS Sync Guide (Capacitor)
+
+This guide explains how to update and run the iOS app after making changes to the web code.
+
+### Prerequisites
+- Xcode 15+ and a simulator or device
+- Node.js + npm, CocoaPods (`sudo gem install cocoapods`)
+- Project root: `whisper-money/`
+
+### First-Time Setup (one-off)
+1. Install dependencies and build the web bundle:
+   - `npm install`
+   - `npm run build`
+2. Add the iOS platform (once):
+   - `npm run cap:add:ios`
+3. Open in Xcode and configure signing:
+   - `npx cap open ios`
+   - Target “App” → Signing & Capabilities → enable “Automatically manage signing”
+   - Choose your Team and set a unique Bundle ID (e.g., `com.yourname.whispermoney`)
+
+### Sync After Code Changes
+1. Build the web bundle: `npm run build`
+2. Sync to native: `npm run cap:sync`
+3. Run on simulator/device: `npm run cap:run:ios`
+   - Or open in Xcode: `npx cap open ios` → build/run
+
+### Live Dev (optional)
+- Start Vite dev server: `npm run dev`
+- Load the dev server in the native shell (no rebuilds): `npm run ios:dev`
+  - Uses `CAP_SERVER_URL=http://localhost:5173`
+
+### Script Shortcuts
+- `npm run cap:update:ios` – update iOS Capacitor deps
+- `npm run ios:build` – build web, sync iOS, run
+
+### Opening in Xcode
+- Open the workspace (not the folder or `.xcodeproj`):
+  - `whisper-money/ios/App/App.xcworkspace`
+  - Or use `npx cap open ios`
+
+### Common Issues
+- Blank screen: ensure `dist/` exists → `npm run build` → `npm run cap:sync`
+- Code not updating: always `npm run build` then `npm run cap:sync`
+- Signing errors: set Team + Bundle ID in Xcode “Signing & Capabilities”
+- Missing Pods: `cd ios/App && pod install`, then reopen the workspace
