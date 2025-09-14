@@ -1,4 +1,5 @@
 import { ReactNode } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { User } from "@supabase/supabase-js";
@@ -11,6 +12,8 @@ interface AppLayoutProps {
 }
 
 const AppLayout = ({ children, user, onAddTransaction }: AppLayoutProps) => {
+  const navigate = useNavigate();
+  const location = useLocation();
   const cleanupAuthState = () => {
     Object.keys(localStorage).forEach((key) => {
       if (key.startsWith('supabase.auth.') || key.includes('sb-')) {
@@ -77,11 +80,21 @@ const AppLayout = ({ children, user, onAddTransaction }: AppLayoutProps) => {
       {/* Bottom Navigation (Mobile) */}
       <nav className="fixed bottom-0 left-0 right-0 bg-card border-t md:hidden">
         <div className="flex justify-around py-2">
-          <Button variant="ghost" size="sm" className="flex flex-col gap-1 h-auto py-2 flex-1">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className={`flex flex-col gap-1 h-auto py-2 flex-1 ${location.pathname === '/' ? 'bg-muted' : ''}`}
+            onClick={() => navigate('/')}
+          >
             <BookOpen className="h-4 w-4" />
             <span className="text-xs">账本</span>
           </Button>
-          <Button variant="ghost" size="sm" className="flex flex-col gap-1 h-auto py-2 flex-1">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className={`flex flex-col gap-1 h-auto py-2 flex-1 ${location.pathname === '/statistics' ? 'bg-muted' : ''}`}
+            onClick={() => navigate('/statistics')}
+          >
             <BarChart3 className="h-4 w-4" />
             <span className="text-xs">统计</span>
           </Button>
