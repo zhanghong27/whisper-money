@@ -67,15 +67,15 @@ const DashboardStats = ({ stats }: DashboardStatsProps) => {
           </CardHeader>
           <CardContent className="px-4 pb-4">
             <div className="text-3xl font-bold text-destructive mb-4">
-              {formatCurrency(stats.monthlyExpense)}
+              {formatCurrency(stats.monthlyIncome)}
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">
-                总收入 <span className="font-medium text-success">{formatCurrency(stats.monthlyIncome)}</span>
+                总收入 <span className="font-medium text-success">{formatCurrency(netIncome)}</span>
               </span>
               <span className="text-muted-foreground">
-                月结余 <span className={`font-medium ${netIncome >= 0 ? 'text-success' : 'text-destructive'}`}>
-                  {formatCurrency(netIncome)}
+                月结余 <span className={`font-medium ${stats.monthlyExpense >= 0 ? 'text-success' : 'text-destructive'}`}>
+                  {formatCurrency(stats.monthlyExpense)}
                 </span>
               </span>
             </div>
