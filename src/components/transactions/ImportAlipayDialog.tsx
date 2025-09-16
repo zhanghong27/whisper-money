@@ -33,7 +33,8 @@ const ImportAlipayDialog = ({ open, onOpenChange, onImported }: ImportAlipayDial
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      toast({ title: "解析失败", description: message, variant: "destructive" });
+      // 移动端常见问题：iOS 不支持 GBK/GB18030 解码的 CSV。请改用 XLSX 或导出 UTF-8 CSV。
+      toast({ title: "解析失败", description: `${message}（建议在手机上使用 UTF-8 CSV 或 XLSX 导出）`, variant: "destructive" });
       setResult(null);
     } finally {
       setLoading(false);
@@ -45,7 +46,6 @@ const ImportAlipayDialog = ({ open, onOpenChange, onImported }: ImportAlipayDial
       .from('accounts')
       .select('*')
       .eq('user_id', userId)
-      .eq('is_deleted', false)
       .limit(50);
     if (error) throw error;
     if (!accounts || accounts.length === 0) throw new Error('未找到任何账户');
@@ -61,8 +61,8 @@ const ImportAlipayDialog = ({ open, onOpenChange, onImported }: ImportAlipayDial
     // expense mapping
     if (alipayCategory.includes('餐饮')) return '餐饮';
     if (alipayCategory.includes('交通')) return '交通';
-    if (alipayCategory.includes('服饰') || alipayCategory.includes('购物')) return '购物';
-    return '购物';
+    if (alipayCategory.includes('服饰') || alipayCategory.includes('购物')) return '其他';
+    return '其他';
   };
 
   const resolveCategoryId = async (userId: string, name: string, type: 'income' | 'expense') => {
@@ -71,7 +71,6 @@ const ImportAlipayDialog = ({ open, onOpenChange, onImported }: ImportAlipayDial
       .from('categories')
       .select('*')
       .eq('user_id', userId)
-      .eq('is_deleted', false)
       .eq('name', name)
       .limit(1);
     if (error) throw error;
@@ -97,31 +96,72 @@ const ImportAlipayDialog = ({ open, onOpenChange, onImported }: ImportAlipayDial
 
       const accountId = await resolveAccountId(userId);
 
-      // Build rows for insertion; skip transfers
+      // 1) 批量准备分类映射，避免逐条网络请求
+      const needPairs = new Set<string>();
+      for (const rec of result.records) {
+        const type = rec['收/支'] === '收入' ? 'income' : rec['收/支'] === '支出' ? 'expense' : 'transfer';
+        if (type === 'transfer') continue;
+        const catName = pickCategoryName(rec['交易分类'], type);
+        needPairs.add(`${type}:${catName}`);
+      }
+      const needed = Array.from(needPairs).map(k => ({ type: k.split(':')[0] as 'income'|'expense', name: k.split(':')[1] }));
+      const { data: allCats, error: catsErr } = await supabase
+        .from('categories')
+        .select('id,name,type')
+        .eq('user_id', userId)
+;
+      if (catsErr) throw catsErr;
+      const byKey = new Map<string,string>();
+      (allCats||[]).forEach(c => byKey.set(`${c.type}:${c.name}`, c.id));
+      const missing = needed.filter(p => !byKey.has(`${p.type}:${p.name}`));
+      if (missing.length) {
+        const { data: inserted, error: insCatErr } = await supabase
+          .from('categories')
+          .insert(missing.map(m => ({ user_id: userId, name: m.name, type: m.type, icon: '📂', color: '#6B7280' })))
+          .select('id,name,type');
+        if (insCatErr) throw insCatErr;
+        (inserted||[]).forEach(c => byKey.set(`${c.type}:${c.name}`, c.id));
+      }
+
+      // Build rows for insertion with de-dup fingerprint; skip transfers
       const toInsert: any[] = [];
-      let delta = 0; // will adjust account balance
+      const uniqSet = new Set<string>();
+      const normalizeDateTime = (s: string | undefined) => {
+        if (!s) return '';
+        const v = s.trim().replace(/\//g, '-').replace('T', ' ');
+        const m = v.match(/^(\d{4}-\d{2}-\d{2})(?:[\s]+(\d{2}:\d{2}:\d{2}))/);
+        if (m) return `${m[1]} ${m[2]}`;
+        const m2 = v.match(/^(\d{4}-\d{2}-\d{2})(?:[\s]+(\d{2}:\d{2}))/);
+        if (m2) return `${m2[1]} ${m2[2]}:00`;
+        return `${s.slice(0,10)} 00:00:00`;
+      };
       for (const rec of result.records) {
         const type = rec['收/支'] === '收入' ? 'income' : rec['收/支'] === '支出' ? 'expense' : 'transfer';
         if (type === 'transfer') continue; // skip 不计收支
 
         const catName = pickCategoryName(rec['交易分类'], type);
-        const categoryId = await resolveCategoryId(userId, catName, type);
-        const dateStr = rec['交易时间']?.slice(0, 10) || format(new Date(), 'yyyy-MM-dd');
+        const categoryId = byKey.get(`${type}:${catName}`)!;
+        const occurredAt = normalizeDateTime(rec['交易时间']);
+        const dateStr = occurredAt ? occurredAt.slice(0,10) : format(new Date(), 'yyyy-MM-dd');
         const amount = Number(rec['金额'] || 0);
         const desc = rec['商品说明'] || rec['交易对方'] || '';
+        const tradeId = rec['交易订单号'] || '';
+        const merchantId = rec['商家订单号'] || '';
+        const fingerprint = `alipay|${occurredAt || dateStr}|${Math.round(amount*100)}|${desc}|${tradeId}|${merchantId}`;
+        if (uniqSet.has(fingerprint)) continue;
+        uniqSet.add(fingerprint);
 
         toInsert.push({
           user_id: userId,
           account_id: accountId,
           category_id: categoryId,
-          amount,
+          amount: type === 'income' ? amount : -amount,
           type,
-          date: dateStr,
+          date: dateStr + ' 00:00:00',
           description: desc,
+          source: 'alipay',
         });
 
-        if (type === 'income') delta += amount;
-        if (type === 'expense') delta -= amount;
       }
 
       if (toInsert.length === 0) {
@@ -129,8 +169,31 @@ const ImportAlipayDialog = ({ open, onOpenChange, onImported }: ImportAlipayDial
         return;
       }
 
-      const { error: insErr } = await supabase.from('transactions').insert(toInsert);
-      if (insErr) throw insErr;
+      // Filter out rows already imported (by unique_hash)
+      const fps = toInsert.map(r => r.unique_hash);
+      const { data: existed, error: exErr } = await supabase
+        .from('transactions')
+        .select('unique_hash')
+        .eq('user_id', userId)
+        .in('unique_hash', fps);
+      if (exErr) throw exErr;
+      const existedSet = new Set((existed || []).map(r => r.unique_hash));
+      const newRows = toInsert.filter(r => !existedSet.has(r.unique_hash));
+      if (newRows.length === 0) {
+        toast({ title: '没有可导入的新记录', description: '系统已自动忽略重复交易' });
+        return;
+      }
+
+      // 分片插入
+      const chunk = 500;
+      for (let i=0;i<newRows.length;i+=chunk) {
+        const seg = newRows.slice(i, i+chunk);
+        const { error: insErr } = await supabase.from('transactions').insert(seg);
+        if (insErr) throw insErr;
+      }
+
+      // Recompute delta only from new rows
+      const delta = newRows.reduce((sum, r) => sum + (r.type === 'income' ? r.amount : -r.amount), 0);
 
       // Update account balance if any delta
       if (delta !== 0) {
@@ -150,11 +213,24 @@ const ImportAlipayDialog = ({ open, onOpenChange, onImported }: ImportAlipayDial
         if (updErr) throw updErr;
       }
 
-      toast({ title: `导入成功`, description: `已导入 ${toInsert.length} 条记录` });
+      toast({ title: `导入成功`, description: `已导入 ${newRows.length} 条新记录（重复已忽略）` });
       onImported?.();
       onOpenChange(false);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const pickMessage = (e: any) => {
+        try {
+          if (typeof e === 'string') return e;
+          if (e?.message) return e.message;
+          if (e?.details) return e.details;
+          if (e?.error_description) return e.error_description;
+          if (e?.error) return e.error;
+          return JSON.stringify(e);
+        } catch { return String(e); }
+      };
+      let message = pickMessage(err);
+      if (/occurred_at|unique_hash/i.test(message)) {
+        message += '。请先在 Supabase 为 transactions 添加 occurred_at/unique_hash 列，并创建 (user_id, unique_hash) 唯一索引后再试。';
+      }
       toast({ title: '导入失败', description: message, variant: 'destructive' });
     } finally {
       setImporting(false);

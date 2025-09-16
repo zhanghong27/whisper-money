@@ -39,8 +39,11 @@ const AppLayout = ({ children, user, onAddTransaction }: AppLayoutProps) => {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="sticky top-0 z-50 w-full border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/60">
-        <div className="container flex h-16 items-center justify-between px-4">
+      <header
+        className="sticky top-0 z-50 w-full border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/60 pointer-events-none"
+        style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 50px)' }}
+      >
+        <div className="container flex h-16 items-center justify-between px-4 pointer-events-auto">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-gradient-primary rounded-lg flex items-center justify-center">
               <span className="text-lg">💰</span>
@@ -62,7 +65,10 @@ const AppLayout = ({ children, user, onAddTransaction }: AppLayoutProps) => {
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-6">
+      <main
+        className="container mx-auto px-4 py-6"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 96px)' }}
+      >
         {children}
       </main>
 
@@ -70,7 +76,7 @@ const AppLayout = ({ children, user, onAddTransaction }: AppLayoutProps) => {
       {onAddTransaction && (
         <Button
           onClick={onAddTransaction}
-          className="fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-money bg-gradient-primary hover:shadow-elevated"
+          className="fixed right-6 h-14 w-14 rounded-full shadow-money bg-gradient-primary hover:shadow-elevated md:bottom-6 bottom-[calc(env(safe-area-inset-bottom,0px)+80px)]"
           size="icon"
         >
           <Plus className="h-6 w-6" />
@@ -78,7 +84,10 @@ const AppLayout = ({ children, user, onAddTransaction }: AppLayoutProps) => {
       )}
 
       {/* Bottom Navigation (Mobile) */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-card border-t md:hidden">
+      <nav
+        className="fixed bottom-0 left-0 right-0 bg-card border-t md:hidden"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px))' }}
+      >
         <div className="flex justify-around py-2">
           <Button 
             variant="ghost" 

@@ -102,20 +102,26 @@ export async function parseAlipayCsv(file: File): Promise<AlipayParseResult> {
     rows.push(normalized);
   }
 
-  const records: AlipayRecordRaw[] = rows.map(r => ({
-    交易时间: r[0] || "",
-    交易分类: r[1] || "",
-    交易对方: r[2] || "",
-    对方账号: r[3] || "",
-    商品说明: r[4] || "",
-    "收/支": r[5] || "",
-    金额: r[6] || "",
-    "收/付款方式": r[7] || "",
-    交易状态: r[8] || "",
-    交易订单号: r[9] || "",
-    商家订单号: r[10] || "",
-    备注: r[11] || "",
-  }));
+  const records: AlipayRecordRaw[] = rows
+    .map(r => ({
+      交易时间: r[0] || "",
+      交易分类: r[1] || "",
+      交易对方: r[2] || "",
+      对方账号: r[3] || "",
+      商品说明: r[4] || "",
+      "收/支": r[5] || "",
+      金额: r[6] || "",
+      "收/付款方式": r[7] || "",
+      交易状态: r[8] || "",
+      交易订单号: r[9] || "",
+      商家订单号: r[10] || "",
+      备注: r[11] || "",
+    }))
+    .filter(record => {
+      // 跳过使用银行卡的交易，避免与银行流水重复
+      const paymentMethod = record["收/付款方式"];
+      return !paymentMethod.includes("招商银行") && !paymentMethod.includes("中国银行");
+    });
 
   return { header, rows, records };
 }

@@ -1,17 +1,21 @@
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from "recharts";
 import { format, eachDayOfInterval, startOfMonth, endOfMonth } from "date-fns";
 import { BarChart3 } from "lucide-react";
 
 interface ExpenseChartProps {
   transactions: any[];
   currentDate: Date;
+  startDate: Date | null;
+  endDate: Date | null;
+  selectedPeriod?: string;
 }
 
-const ExpenseChart = ({ transactions, currentDate }: ExpenseChartProps) => {
+const ExpenseChart = ({ transactions, currentDate, startDate, endDate }: ExpenseChartProps) => {
   const [selectedType, setSelectedType] = useState("支出");
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const types = ["支出", "收入", "结余"];
 
   const formatCurrency = (amount: number) => {
@@ -21,18 +25,32 @@ const ExpenseChart = ({ transactions, currentDate }: ExpenseChartProps) => {
     }).format(amount);
   };
 
-  // Generate daily data for the month
-  const startDate = startOfMonth(currentDate);
-  const endDate = endOfMonth(currentDate);
-  const daysInMonth = eachDayOfInterval({ start: startDate, end: endDate });
+  // Determine date range for chart
+  let rangeStart = startDate ?? startOfMonth(currentDate);
+  let rangeEnd = endDate ?? endOfMonth(currentDate);
 
-  const dailyData = daysInMonth.map(day => {
+  // If "全部" 未指定范围，则基于交易数据推断
+  if (!startDate || !endDate) {
+    if (transactions.length > 0) {
+      const dates = transactions.map(t => new Date(t.date));
+      dates.sort((a, b) => a.getTime() - b.getTime());
+      rangeStart = dates[0];
+      rangeEnd = dates[dates.length - 1];
+    } else {
+      rangeStart = startOfMonth(currentDate);
+      rangeEnd = endOfMonth(currentDate);
+    }
+  }
+
+  const daysInRange = eachDayOfInterval({ start: rangeStart, end: rangeEnd });
+
+  const dailyData = daysInRange.map(day => {
     const dayStr = format(day, 'yyyy-MM-dd');
     const dayTransactions = transactions.filter(t => t.date === dayStr);
     
-    const expense = dayTransactions
+    const expense = Math.abs(dayTransactions
       .filter(t => t.type === 'expense')
-      .reduce((sum, t) => sum + Number(t.amount), 0);
+      .reduce((sum, t) => sum + Number(t.amount), 0));
     
     const income = dayTransactions
       .filter(t => t.type === 'income')
@@ -54,10 +72,22 @@ const ExpenseChart = ({ transactions, currentDate }: ExpenseChartProps) => {
   const totalValue = dailyData.reduce((sum, d) => sum + d.value, 0);
   const average = totalValue / dailyData.length;
 
-  // Find the highest transaction for display
-  const highestDay = dailyData.reduce((max, day) => 
-    day.value > max.value ? day : max, dailyData[0] || { value: 0, date: '', fullDate: '' }
-  );
+  // Active day (hover/touch) and default day (first day of month)
+  const activeDay = activeIndex != null ? dailyData[activeIndex] : null;
+  const defaultDay = dailyData[0] || { value: 0, date: '', fullDate: '' };
+
+  const formatDayLabel = (fullDate: string) => {
+    const d = new Date(fullDate);
+    return isNaN(d.getTime()) ? format(rangeStart, 'M月d日') : format(d, 'M月d日');
+  };
+
+  const formatTick = (v: number) => {
+    const abs = Math.abs(v);
+    if (abs >= 1e8) return `${(v / 1e8).toFixed(1)}亿`;
+    if (abs >= 1e4) return `${(v / 1e4).toFixed(1)}万`;
+    if (abs >= 1e3) return `${(v / 1e3).toFixed(1)}k`;
+    return `${Math.round(v)}`;
+  };
 
   return (
     <Card>
@@ -72,28 +102,57 @@ const ExpenseChart = ({ transactions, currentDate }: ExpenseChartProps) => {
         <BarChart3 className="h-4 w-4 text-muted-foreground" />
       </CardHeader>
       <CardContent>
-        {/* Highest transaction display */}
-        {highestDay.value > 0 && (
-          <div className="mb-4 text-sm">
-            <span className="font-medium">
-              {format(new Date(highestDay.fullDate), 'M月d日')} {formatCurrency(highestDay.value)}
-            </span>
-            <span className="text-muted-foreground ml-1">{'>'}</span>
-          </div>
-        )}
+        {/* Active or first-day display - always show, even when value is 0 */}
+        <div className="mb-4 text-sm">
+          <span className="font-medium">
+            {activeDay
+              ? `${formatDayLabel(activeDay.fullDate)} ${formatCurrency(activeDay.value)}`
+              : `${formatDayLabel(defaultDay.fullDate)} ${formatCurrency(defaultDay.value)}`}
+          </span>
+        </div>
 
         {/* Chart */}
         <div className="h-48 w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={dailyData}>
+            <BarChart 
+              data={dailyData}
+              onMouseMove={(state: any) => {
+                if (state && state.activeTooltipIndex != null) setActiveIndex(state.activeTooltipIndex);
+              }}
+              onTouchStart={(state: any) => {
+                if (state && state.activeTooltipIndex != null) setActiveIndex(state.activeTooltipIndex);
+              }}
+              onTouchMove={(state: any) => {
+                if (state && state.activeTooltipIndex != null) setActiveIndex(state.activeTooltipIndex);
+              }}
+              onMouseLeave={() => setActiveIndex(null)}
+            >
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
               <XAxis 
                 dataKey="date" 
                 axisLine={false}
                 tickLine={false}
                 fontSize={12}
-                domain={['dataMin', 'dataMax']}
               />
-              <YAxis hide />
+              <YAxis 
+                width={40}
+                tickFormatter={formatTick}
+                axisLine={false}
+                tickLine={false}
+                fontSize={12}
+              />
+              <Tooltip 
+                cursor={{ fill: 'rgba(0,0,0,0.04)' }}
+                formatter={(value: any) => [formatCurrency(Number(value)), selectedType]}
+                labelFormatter={(label: any, payload: any) => {
+                  const idx = payload && payload[0] ? payload[0].payload : null;
+                  if (idx && idx.fullDate) {
+                    const d = new Date(idx.fullDate);
+                    return isNaN(d.getTime()) ? format(rangeStart, 'yyyy-MM-dd') : format(d, 'yyyy-MM-dd');
+                  }
+                  return label;
+                }}
+              />
               <Bar 
                 dataKey="value" 
                 fill={selectedType === "支出" ? "#ef4444" : selectedType === "收入" ? "#10b981" : "#6b7280"} 

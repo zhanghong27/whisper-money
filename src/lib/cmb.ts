@@ -24,16 +24,26 @@ const HEADER = [
 
 type PdfTextItem = { str: string; transform: number[] };
 
-export async function parseCmbPdf(file: File): Promise<CmbParseResult> {
-  // Load PDF.js and configure worker via CDN URL to satisfy environments
-  // where bundling the worker is problematic under Vite.
-  const pdfjsLib: any = await import('pdfjs-dist');
-  if (pdfjsLib?.GlobalWorkerOptions) {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
-  }
-
+export async function parseCmbPdf(file: File, onProgress?: (msg: string) => void): Promise<CmbParseResult> {
+  // Use legacy build and no-worker mode for mobile WebView compatibility.
+  const pdfjsLib: any = await import('pdfjs-dist/legacy/build/pdf');
+  // Prefer real worker bundled with app; fallback to disableWorker
+  try {
+    if (pdfjsLib?.GlobalWorkerOptions) {
+      const workerUrl = new URL('pdfjs-dist/legacy/build/pdf.worker.min.js', import.meta.url).toString();
+      pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+    }
+  } catch {}
   const data = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data }).promise;
+  onProgress?.('正在加载PDF…');
+  let pdf: any;
+  try {
+    pdf = await pdfjsLib.getDocument({ data, isEvalSupported: false }).promise;
+  } catch (e) {
+    // Retry in no-worker mode
+    pdf = await pdfjsLib.getDocument({ data, disableWorker: true, isEvalSupported: false }).promise;
+  }
+  onProgress?.(`解析第 1/${1} 页文本…`);
   const page = await pdf.getPage(1);
   const textContent = await page.getTextContent();
   const items: PdfTextItem[] = (textContent.items as any[]).map((it) => ({
@@ -114,6 +124,7 @@ export async function parseCmbPdf(file: File): Promise<CmbParseResult> {
     对手信息: r[5] || '',
   }));
 
+  onProgress?.(`完成：共 ${rows.length} 行`);
   return { header: HEADER, rows, records };
 }
 

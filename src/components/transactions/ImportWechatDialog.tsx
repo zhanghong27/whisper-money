@@ -45,21 +45,21 @@ const ImportWechatDialog = ({ open, onOpenChange, onImported }: ImportWechatDial
       .from('accounts')
       .select('*')
       .eq('user_id', userId)
-      .eq('is_deleted', false)
       .limit(50);
     if (error) throw error;
     if (!accounts || accounts.length === 0) throw new Error('未找到任何账户');
-    const wechat = accounts.find(a => a.type === 'wechat' || a.name.includes('微信'));
+    // 优先匹配微信账户
+    const wechat = accounts.find(a => a.name.includes('微信') || a.name.includes('WeChat'));
     if (wechat) return wechat.id;
-    const cash = accounts.find(a => a.type === 'cash' || a.name.includes('现金'));
-    return (cash || accounts[0]).id;
+    // 如果没有微信账户，返回第一个账户而不是现金
+    return accounts[0].id;
   };
 
   const pickCategoryName = (wxType: string, type: 'income' | 'expense') => {
     if (type === 'income') return '工资';
-    if (wxType.includes('消费') || wxType.includes('商户')) return '购物';
-    if (wxType.includes('转账')) return '购物';
-    return '购物';
+    if (wxType.includes('消费') || wxType.includes('商户')) return '其他';
+    if (wxType.includes('转账')) return '其他';
+    return '其他';
   };
 
   const resolveCategoryId = async (userId: string, name: string, type: 'income' | 'expense') => {
@@ -67,7 +67,6 @@ const ImportWechatDialog = ({ open, onOpenChange, onImported }: ImportWechatDial
       .from('categories')
       .select('*')
       .eq('user_id', userId)
-      .eq('is_deleted', false)
       .eq('name', name)
       .limit(1);
     if (error) throw error;
@@ -91,35 +90,102 @@ const ImportWechatDialog = ({ open, onOpenChange, onImported }: ImportWechatDial
       const userId = userData.user.id;
 
       const accountId = await resolveAccountId(userId);
+
+      // 1) 预计算本次导入所需的分类集合，批量解析/创建，避免逐条请求
+      const needPairs = new Set<string>(); // key: `${type}:${name}`
+      for (const rec of result.records) {
+        const type = mapWechatTypeToTransaction(rec['收/支']);
+        if (type === 'transfer') continue;
+        const catName = pickCategoryName(rec['交易类型'], type);
+        needPairs.add(`${type}:${catName}`);
+      }
+      const needed = Array.from(needPairs).map(k => ({ type: k.split(':')[0] as 'income'|'expense', name: k.split(':')[1] }));
+      // 拉全量用户分类到内存做映射（通常数量不大）
+      const { data: allCats, error: catsErr } = await supabase
+        .from('categories')
+        .select('id,name,type')
+        .eq('user_id', userId)
+;
+      if (catsErr) throw catsErr;
+      const byKey = new Map<string,string>();
+      (allCats||[]).forEach(c => byKey.set(`${c.type}:${c.name}`, c.id));
+      const missing = needed.filter(p => !byKey.has(`${p.type}:${p.name}`));
+      if (missing.length) {
+        const { data: inserted, error: insCatErr } = await supabase
+          .from('categories')
+          .insert(missing.map(m => ({ user_id: userId, name: m.name, type: m.type, icon: '📂', color: '#6B7280' })))
+          .select('id,name,type');
+        if (insCatErr) throw insCatErr;
+        (inserted||[]).forEach(c => byKey.set(`${c.type}:${c.name}`, c.id));
+      }
+
       const toInsert: any[] = [];
-      let delta = 0;
+      const uniqSet = new Set<string>();
+      const normalizeDateTime = (s: string | undefined) => {
+        if (!s) return '';
+        const v = s.trim().replace(/\//g, '-').replace('T', ' ');
+        // keep 'YYYY-MM-DD HH:mm:ss' if present
+        const m = v.match(/^(\d{4}-\d{2}-\d{2})(?:[\s]+(\d{2}:\d{2}:\d{2}))/);
+        if (m) return `${m[1]} ${m[2]}`;
+        // try 'YYYY-MM-DD HH:mm'
+        const m2 = v.match(/^(\d{4}-\d{2}-\d{2})(?:[\s]+(\d{2}:\d{2}))/);
+        if (m2) return `${m2[1]} ${m2[2]}:00`;
+        return `${v.slice(0,10)} 00:00:00`;
+      };
+
       for (const rec of result.records) {
         const type = mapWechatTypeToTransaction(rec['收/支']);
         if (type === 'transfer') continue; // 跳过中性/未知
         const catName = pickCategoryName(rec['交易类型'], type);
-        const categoryId = await resolveCategoryId(userId, catName, type);
-        const dateStr = rec['交易时间']?.slice(0, 10) || format(new Date(), 'yyyy-MM-dd');
+        const categoryId = byKey.get(`${type}:${catName}`)!;
+        const occurredAt = normalizeDateTime(rec['交易时间']);
+        const dateStr = occurredAt ? occurredAt.slice(0, 10) : format(new Date(), 'yyyy-MM-dd');
         const amount = wechatAmountToNumber(rec['金额(元)']);
         const desc = rec['商品'] || rec['交易对方'] || '';
+        const tradeId = rec['交易单号'] || '';
+        const merchantId = rec['商户单号'] || '';
+        const fingerprint = `wechat|${occurredAt || dateStr}|${Math.round(amount*100)}|${desc}|${tradeId}|${merchantId}`;
+        if (uniqSet.has(fingerprint)) continue;
+        uniqSet.add(fingerprint);
+
         toInsert.push({
           user_id: userId,
           account_id: accountId,
           category_id: categoryId,
-          amount,
+          amount: type === 'income' ? amount : -amount,
           type,
-          date: dateStr,
+          date: dateStr + ' 00:00:00',
           description: desc,
+          source: 'wechat',
         });
-        if (type === 'income') delta += amount;
-        if (type === 'expense') delta -= amount;
       }
       if (toInsert.length === 0) {
         toast({ title: '没有可导入的记录', description: '已跳过中性/未知交易' });
         return;
       }
-      const { error: insErr } = await supabase.from('transactions').insert(toInsert);
-      if (insErr) throw insErr;
 
+      const fps = toInsert.map(r => r.unique_hash);
+      const { data: existed, error: exErr } = await supabase
+        .from('transactions')
+        .select('unique_hash')
+        .eq('user_id', userId)
+        .in('unique_hash', fps);
+      if (exErr) throw exErr;
+      const existedSet = new Set((existed || []).map(r => r.unique_hash));
+      const newRows = toInsert.filter(r => !existedSet.has(r.unique_hash));
+      if (newRows.length === 0) {
+        toast({ title: '没有可导入的新记录', description: '系统已自动忽略重复交易' });
+        return;
+      }
+      // 大批量分片插入，避免超限
+      const chunk = 500;
+      for (let i=0;i<newRows.length;i+=chunk) {
+        const seg = newRows.slice(i, i+chunk);
+        const { error: insErr } = await supabase.from('transactions').insert(seg);
+        if (insErr) throw insErr;
+      }
+
+      const delta = newRows.reduce((sum, r) => sum + (r.type === 'income' ? r.amount : -r.amount), 0);
       if (delta !== 0) {
         const { data: accData, error: accErr } = await supabase
           .from('accounts')
@@ -140,7 +206,20 @@ const ImportWechatDialog = ({ open, onOpenChange, onImported }: ImportWechatDial
       onImported?.();
       onOpenChange(false);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const pickMessage = (e: any) => {
+        try {
+          if (typeof e === 'string') return e;
+          if (e?.message) return e.message;
+          if (e?.details) return e.details;
+          if (e?.error_description) return e.error_description;
+          if (e?.error) return e.error;
+          return JSON.stringify(e);
+        } catch { return String(e); }
+      };
+      let message = pickMessage(err);
+      if (/occurred_at|unique_hash/i.test(message)) {
+        message += '。请先在 Supabase 为 transactions 添加 occurred_at/unique_hash 列，并创建 (user_id, unique_hash) 唯一索引后再试。';
+      }
       toast({ title: '导入失败', description: message, variant: 'destructive' });
     } finally {
       setImporting(false);

@@ -28,34 +28,48 @@ const HEADER_CANDIDATES = [
 
 type PdfTextItem = { str: string; transform: number[] };
 
-export async function parseBocPdf(file: File, password?: string): Promise<BocParseResult> {
-  // Use PDF.js without a web worker to avoid worker path/network issues
-  const pdfjsLib: any = await import('pdfjs-dist');
-  if (pdfjsLib?.GlobalWorkerOptions) {
-    // Set a worker URL to avoid runtime checks throwing errors
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
-  }
-  const data = await file.arrayBuffer();
-  const loading = pdfjsLib.getDocument({ data, password, disableWorker: true });
-  const pdf = await loading.promise;
-
-  type Pt = { x: number; y: number; text: string };
-  const pts: Pt[] = [];
-  for (let p = 1; p <= pdf.numPages; p++) {
-    const page = await pdf.getPage(p);
-    const text = await page.getTextContent();
-    const items: PdfTextItem[] = (text.items as any[]).map((it) => ({
-      str: String((it as any).str || ''),
-      transform: (it as any).transform || [],
-    }));
-    for (const it of items) {
-      const s = it.str.trim();
-      if (!s) continue;
-      const x = Number(it.transform?.[4] || 0);
-      const y = Number(it.transform?.[5] || 0);
-      pts.push({ x, y, text: s });
+export async function parseBocPdf(file: File, password?: string, onProgress?: (msg: string)=>void): Promise<BocParseResult> {
+  // Use legacy pdfjs build and disable worker for mobile WebView
+  try { (globalThis as any).pdfjsDisableWorker = true; } catch {}
+  const pdfjsLib: any = await import('pdfjs-dist/legacy/build/pdf');
+  try {
+    if (pdfjsLib?.GlobalWorkerOptions) {
+      const workerUrl = new URL('pdfjs-dist/legacy/build/pdf.worker.min.js', import.meta.url).toString();
+      pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
     }
+  } catch {}
+  const data = await file.arrayBuffer();
+  onProgress?.('正在加载PDF…');
+  let loading: any;
+  try {
+    loading = pdfjsLib.getDocument({ data, password, isEvalSupported: false });
+    const pdf = await loading.promise;
+    return await extract(pdf);
+  } catch (e) {
+    // Retry without worker
+    loading = pdfjsLib.getDocument({ data, password, disableWorker: true, isEvalSupported: false });
+    const pdf = await loading.promise;
+    return await extract(pdf);
   }
+  async function extract(pdf: any): Promise<BocParseResult> {
+    type Pt = { x: number; y: number; text: string };
+    const pts: Pt[] = [];
+    for (let p = 1; p <= pdf.numPages; p++) {
+      onProgress?.(`解析第 ${p}/${pdf.numPages} 页文本…`);
+      const page = await pdf.getPage(p);
+      const text = await page.getTextContent();
+      const items: PdfTextItem[] = (text.items as any[]).map((it) => ({
+        str: String((it as any).str || ''),
+        transform: (it as any).transform || [],
+      }));
+      for (const it of items) {
+        const s = it.str.trim();
+        if (!s) continue;
+        const x = Number(it.transform?.[4] || 0);
+        const y = Number(it.transform?.[5] || 0);
+        pts.push({ x, y, text: s });
+      }
+    }
 
   // Find present header labels and their x positions
   const present: Record<string, number> = {};
@@ -128,7 +142,9 @@ export async function parseBocPdf(file: File, password?: string): Promise<BocPar
     return obj;
   });
 
-  return { header, rows, records };
+    onProgress?.(`完成：共 ${rows.length} 行`);
+    return { header, rows, records };
+  }
 }
 
 export function bocAmountToNumber(s?: string): number {

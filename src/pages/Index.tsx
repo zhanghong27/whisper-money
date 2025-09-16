@@ -11,15 +11,17 @@ import ImportCmbDialog from "@/components/transactions/ImportCmbDialog";
 import ImportBocDialog from "@/components/transactions/ImportBocDialog";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+// removed month Input; using unified period navigation
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { 
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
-import { Loader2, RefreshCw, ChevronDown } from "lucide-react";
-import { format } from 'date-fns';
+import { Loader2, RefreshCw, ChevronDown, ChevronLeft, ChevronRight, Calendar as CalendarIcon } from "lucide-react";
+import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, startOfYear, endOfYear, addDays, differenceInCalendarDays } from 'date-fns';
 
 interface StatsData {
   totalBalance: number;
@@ -61,8 +63,29 @@ const Index = () => {
     currency: 'CNY'
   });
   const [selectedMonth, setSelectedMonth] = useState<Date>(new Date());
+  const [selectedPeriod, setSelectedPeriod] = useState<'周' | '月' | '年' | '全部' | '范围'>('月');
+  const [customRange, setCustomRange] = useState<{ from?: Date; to?: Date }>({});
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const periods: Array<'周' | '月' | '年' | '全部' | '范围'> = ['周','月','年','全部','范围'];
+
+  const getDateRange = () => {
+    const base = selectedMonth ?? new Date();
+    switch (selectedPeriod) {
+      case '周':
+        return { start: startOfWeek(base, { weekStartsOn: 1 }), end: endOfWeek(base, { weekStartsOn: 1 }) };
+      case '月':
+        return { start: startOfMonth(base), end: endOfMonth(base) };
+      case '年':
+        return { start: startOfYear(base), end: endOfYear(base) };
+      case '范围':
+        if (customRange.from && customRange.to) return { start: customRange.from, end: customRange.to };
+        return { start: startOfMonth(base), end: endOfMonth(base) };
+      case '全部':
+      default:
+        return { start: null as Date | null, end: null as Date | null };
+    }
+  };
 
   useEffect(() => {
     if (user) {
@@ -70,13 +93,13 @@ const Index = () => {
     }
   }, [user]);
 
-  // Recompute stats and transactions when month changes
+  // Recompute stats and transactions when month/period changes
   useEffect(() => {
     if (user) {
       fetchStats();
       fetchMonthTransactions();
     }
-  }, [user, selectedMonth]);
+  }, [user, selectedMonth, selectedPeriod, customRange]);
 
   const fetchDashboardData = async () => {
     if (!user) return;
@@ -97,39 +120,55 @@ const Index = () => {
   const fetchStats = async () => {
     if (!user) return;
 
-    // Get total balance from all accounts
-    const { data: accounts } = await supabase
-      .from('accounts')
-      .select('balance, currency')
-      .eq('user_id', user.id)
-      .eq('is_deleted', false);
-
-    // Calculate total savings (sum of all account balances)
-    const totalSavings = accounts?.reduce((sum, account) => sum + Number(account.balance), 0) || 0;
-
-    // Get monthly income and expense
-    // Calculate [startOfMonth, startOfNextMonth)
-    const base = selectedMonth ?? new Date();
-    const startOfMonth = new Date(base.getFullYear(), base.getMonth(), 1);
-    const startOfNextMonth = new Date(base.getFullYear(), base.getMonth() + 1, 1);
-
-    const { data: monthlyTransactions } = await supabase
+    const { start, end } = getDateRange();
+    
+    // Single optimized query to get all needed data
+    let allTransactionsQuery = supabase
       .from('transactions')
-      .select('amount, type')
-      .eq('user_id', user.id)
-      .gte('date', format(startOfMonth, 'yyyy-MM-dd'))
-      .lt('date', format(startOfNextMonth, 'yyyy-MM-dd'));
+      .select('amount, type, date')
+      .eq('user_id', user.id);
+    
+    if (end) {
+      allTransactionsQuery = allTransactionsQuery.lte('date', format(end, 'yyyy-MM-dd'));
+    }
+    
+    const [{ data: allTransactions }, { data: accounts }] = await Promise.all([
+      allTransactionsQuery,
+      supabase
+        .from('accounts')
+        .select('currency')
+        .eq('user_id', user.id)
+        .limit(1)
+    ]);
 
-    const monthlyIncome = monthlyTransactions
-      ?.filter(t => t.type === 'income')
-      ?.reduce((sum, t) => sum + Number(t.amount), 0) || 0;
+    if (!allTransactions) return;
 
-    const monthlyExpense = monthlyTransactions
-      ?.filter(t => t.type === 'expense')
-      ?.reduce((sum, t) => sum + Number(t.amount), 0) || 0;
+    // Calculate all stats in one pass
+    let monthlyIncome = 0;
+    let monthlyExpense = 0;
+    let cumulativeIncome = 0;
+    let cumulativeExpense = 0;
 
-    // Per request: 总余额 = 本月收入 - 本月支出
+    const startStr = start ? format(start, 'yyyy-MM-dd') : null;
+    const endStr = end ? format(end, 'yyyy-MM-dd') : null;
+
+    for (const transaction of allTransactions) {
+      const amount = Number(transaction.amount);
+      const isInPeriod = (!startStr || transaction.date >= startStr) && 
+                        (!endStr || transaction.date <= endStr);
+      
+      if (transaction.type === 'income') {
+        cumulativeIncome += amount;
+        if (isInPeriod) monthlyIncome += amount;
+      } else if (transaction.type === 'expense') {
+        cumulativeExpense += Math.abs(amount);
+        if (isInPeriod) monthlyExpense += Math.abs(amount);
+      }
+    }
+
+    const totalSavings = cumulativeIncome - cumulativeExpense;
     const totalBalance = monthlyIncome - monthlyExpense;
+    
     setStats({
       totalBalance,
       monthlyIncome,
@@ -142,11 +181,9 @@ const Index = () => {
   const fetchMonthTransactions = async () => {
     if (!user) return;
 
-    const base = selectedMonth ?? new Date();
-    const startOfMonth = new Date(base.getFullYear(), base.getMonth(), 1);
-    const startOfNextMonth = new Date(base.getFullYear(), base.getMonth() + 1, 1);
+    const { start, end } = getDateRange();
 
-    const { data } = await supabase
+    let listQuery = supabase
       .from('transactions')
       .select(`
         id,
@@ -154,21 +191,31 @@ const Index = () => {
         type,
         description,
         date,
+        source,
+        category_id,
+        account_id,
         categories (name, icon, color),
         accounts (name, icon)
       `)
       .eq('user_id', user.id)
-      .gte('date', format(startOfMonth, 'yyyy-MM-dd'))
-      .lt('date', format(startOfNextMonth, 'yyyy-MM-dd'))
       .order('date', { ascending: false })
-      .order('created_at', { ascending: false });
+      .limit(100);
 
-    const formattedTransactions = data?.map(t => ({
+    if (start && end) {
+      listQuery = listQuery.gte('date', format(start, 'yyyy-MM-dd')).lte('date', format(end, 'yyyy-MM-dd'));
+    }
+
+    const { data: transactionData } = await listQuery;
+    
+    const formattedTransactions = (transactionData || []).map(t => ({
       id: t.id,
       amount: Number(t.amount),
       type: t.type as 'income' | 'expense' | 'transfer',
       description: t.description || '',
       date: t.date,
+      source: t.source,
+      category_id: t.category_id,
+      account_id: t.account_id,
       category: {
         name: t.categories?.name || '',
         icon: t.categories?.icon || '📂',
@@ -178,9 +225,50 @@ const Index = () => {
         name: t.accounts?.name || '',
         icon: t.accounts?.icon || '💰'
       }
-    })) || [];
+    }));
 
     setTransactions(formattedTransactions);
+  };
+
+  const navigatePeriod = (direction: 'prev' | 'next') => {
+    const step = direction === 'prev' ? -1 : 1;
+    const d = new Date(selectedMonth);
+    if (selectedPeriod === '周') {
+      d.setDate(d.getDate() + step * 7);
+      setSelectedMonth(d);
+    } else if (selectedPeriod === '年') {
+      d.setFullYear(d.getFullYear() + step);
+      setSelectedMonth(d);
+    } else if (selectedPeriod === '范围' && customRange.from && customRange.to) {
+      const len = Math.abs(differenceInCalendarDays(customRange.to, customRange.from)) + 1;
+      const from = addDays(customRange.from, step * len);
+      const to = addDays(customRange.to, step * len);
+      setCustomRange({ from, to });
+      setSelectedMonth(from);
+    } else {
+      d.setMonth(d.getMonth() + step);
+      setSelectedMonth(d);
+    }
+  };
+
+  const formatDateHeader = () => {
+    const { start, end } = getDateRange();
+    if (selectedPeriod === '周' || selectedPeriod === '范围') {
+      if (start && end) {
+        const sameYear = start.getFullYear() === end.getFullYear();
+        const sameMonth = sameYear && start.getMonth() === end.getMonth();
+        if (sameMonth) return `${format(start, 'yyyy年M月d日')}～${format(end, 'd日')}`;
+        if (sameYear) return `${format(start, 'yyyy年M月d日')}～${format(end, 'M月d日')}`;
+        return `${format(start, 'yyyy年M月d日')}～${format(end, 'yyyy年M月d日')}`;
+      }
+    } else if (selectedPeriod === '月') {
+      return format(selectedMonth, 'yyyy年MM月');
+    } else if (selectedPeriod === '年') {
+      return format(selectedMonth, 'yyyy年');
+    } else if (selectedPeriod === '全部') {
+      return '全部';
+    }
+    return format(selectedMonth, 'yyyy年MM月');
   };
 
   const handleTransactionAdded = () => {
@@ -204,30 +292,19 @@ const Index = () => {
       user={user} 
       onAddTransaction={() => setShowAddTransaction(true)}
     >
-      <div className="space-y-4 md:space-y-6 pb-20 md:pb-6 px-4 md:px-6">
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
+        <div className="space-y-6 pb-20 md:pb-6 px-4 md:px-6 pt-4">
         {/* Header with refresh - 移动端优化 */}
-        <div className="flex flex-col space-y-4 md:space-y-0 md:flex-row md:items-center md:justify-between">
+        <div className="flex items-center justify-between">
           <div className="animate-fade-in">
-            <h1 className="text-xl md:text-2xl font-bold">财务概览</h1>
+            <h1 className="text-xl md:text-2xl font-bold flex items-baseline gap-2">
+              <span>财务概览</span>
+              <span className="text-xs text-muted-foreground">{formatDateHeader()}</span>
+            </h1>
             <p className="text-sm md:text-base text-muted-foreground">管理您的收入和支出</p>
           </div>
-          
-          {/* 移动端控制按钮区域 */}
-          <div className="flex flex-col space-y-2 md:space-y-0 md:flex-row md:items-center md:gap-2">
-            <Input
-              type="month"
-              value={format(selectedMonth, 'yyyy-MM')}
-              onChange={(e) => {
-                const val = e.target.value; // yyyy-MM
-                if (val) {
-                  const d = new Date(val + '-01');
-                  if (!isNaN(d.getTime())) setSelectedMonth(d);
-                }
-              }}
-              className="w-full md:w-[150px]"
-            />
-            
-            <div className="flex gap-2">
+          {/* 右侧 导入 + 刷新 */}
+          <div className="flex gap-2">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" className="flex-1 md:flex-none">
@@ -265,8 +342,79 @@ const Index = () => {
               >
                 <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               </Button>
-            </div>
           </div>
+        </div>
+
+        {/* Period selector + navigation (sticky) */}
+        <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 py-2">
+          <div className="flex gap-2 overflow-x-auto pb-2">
+            {periods.map((p) => (
+              <Button
+                key={p}
+                variant={selectedPeriod === p ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setSelectedPeriod(p)}
+                className="whitespace-nowrap"
+              >
+                {p}
+              </Button>
+            ))}
+          </div>
+          <div className="flex items-center justify-between">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => navigatePeriod('prev')}
+              className="rounded-full bg-primary text-primary-foreground"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <h2 className="text-lg font-medium">{formatDateHeader()}</h2>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => navigatePeriod('next')}
+              className="rounded-full bg-primary text-primary-foreground"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {selectedPeriod === '范围' && (
+            <div className="flex items-center gap-3 mt-2">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="justify-start">
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {customRange.from && customRange.to
+                      ? `${format(customRange.from, 'yyyy年MM月dd日')} - ${format(customRange.to, 'yyyy年MM月dd日')}`
+                      : '选择日期范围'}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-3" align="start">
+                  <div className="flex flex-col gap-3">
+                    <Calendar
+                      mode="range"
+                      selected={customRange}
+                      onSelect={(range) => { setCustomRange(range ?? {}); if (range?.from) setSelectedMonth(range.from); }}
+                      numberOfMonths={2}
+                      initialFocus
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" variant="secondary" onClick={() => { const to = new Date(); const from = addDays(to,-6); setCustomRange({from,to}); setSelectedMonth(from); }}>最近7天</Button>
+                      <Button size="sm" variant="secondary" onClick={() => { const to = new Date(); const from = addDays(to,-29); setCustomRange({from,to}); setSelectedMonth(from); }}>最近30天</Button>
+                      <Button size="sm" variant="secondary" onClick={() => { const to = new Date(); const from = addDays(to,-89); setCustomRange({from,to}); setSelectedMonth(from); }}>最近90天</Button>
+                      <Button size="sm" variant="secondary" onClick={() => { const to = new Date(); const from = addDays(to,-179); setCustomRange({from,to}); setSelectedMonth(from); }}>最近半年</Button>
+                      <Button size="sm" variant="secondary" onClick={() => { const to = new Date(); const from = addDays(to,-364); setCustomRange({from,to}); setSelectedMonth(from); }}>最近一年</Button>
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
+              {customRange.from && customRange.to && (
+                <Button variant="ghost" size="sm" onClick={() => setCustomRange({})}>清除</Button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Stats Cards */}
@@ -276,6 +424,7 @@ const Index = () => {
         <div className="space-y-4">
           <TransactionList 
             transactions={transactions}
+            onTransactionUpdated={fetchDashboardData}
           />
         </div>
 
@@ -307,6 +456,7 @@ const Index = () => {
           onOpenChange={setShowImportBoc}
           onImported={fetchDashboardData}
         />
+        </div>
       </div>
     </AppLayout>
   );

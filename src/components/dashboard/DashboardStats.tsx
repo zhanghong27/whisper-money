@@ -16,7 +16,7 @@ interface DashboardStatsProps {
 }
 
 const DashboardStats = ({ stats }: DashboardStatsProps) => {
-  const [showSavings, setShowSavings] = useState(true);
+  const [showSavings, setShowSavings] = useState(false);
   
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('zh-CN', {
@@ -25,108 +25,115 @@ const DashboardStats = ({ stats }: DashboardStatsProps) => {
     }).format(amount);
   };
 
-  const netIncome = stats.monthlyIncome - stats.monthlyExpense;
+  const netIncome = stats.monthlyIncome - stats.monthlyExpense; // 本周期结余
+  const netPositive = netIncome >= 0;
+  const expenseNonNegative = stats.monthlyExpense >= 0;
 
   return (
-    <div className="space-y-3 md:space-y-4">
-      {/* 累计攒钱卡片 - 移动端优化 */}
-      <Card className="shadow-card animate-fade-in">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3 px-4 md:px-6">
-          <CardTitle className="text-sm font-medium">累计攒钱</CardTitle>
+    <div className="space-y-6">
+      {/* 累计攒钱 - 主要展示区域 */}
+      <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 rounded-2xl p-6 animate-fade-in">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+            <span className="text-sm font-medium text-blue-700 dark:text-blue-300">累计攒钱</span>
+          </div>
           <Button
             variant="ghost"
             size="icon"
             onClick={() => setShowSavings(!showSavings)}
-            className="h-8 w-8 hover-scale"
+            className="h-8 w-8 hover:bg-blue-100 dark:hover:bg-blue-900/50"
           >
             {showSavings ? (
-              <Eye className="h-4 w-4 text-muted-foreground" />
+              <Eye className="h-4 w-4 text-blue-600 dark:text-blue-400" />
             ) : (
-              <EyeOff className="h-4 w-4 text-muted-foreground" />
+              <EyeOff className="h-4 w-4 text-blue-600 dark:text-blue-400" />
             )}
           </Button>
-        </CardHeader>
-        <CardContent className="px-4 md:px-6 pb-4">
-          <div className="text-xl md:text-2xl font-bold">
-            {showSavings ? formatCurrency(stats.totalSavings) : '****'}
-          </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            总储蓄金额
-          </p>
-        </CardContent>
-      </Card>
-
-      {/* 移动端单卡片布局，桌面端保持三卡片 */}
-      <div className="md:hidden">
-        <Card className="shadow-card animate-fade-in">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3 px-4">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              总支出
-              <TrendingDown className="h-4 w-4 text-destructive" />
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <div className="text-3xl font-bold text-destructive mb-4">
-              {formatCurrency(stats.monthlyIncome)}
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">
-                总收入 <span className="font-medium text-success">{formatCurrency(netIncome)}</span>
-              </span>
-              <span className="text-muted-foreground">
-                月结余 <span className={`font-medium ${stats.monthlyExpense >= 0 ? 'text-success' : 'text-destructive'}`}>
-                  {formatCurrency(stats.monthlyExpense)}
-                </span>
-              </span>
-            </div>
-          </CardContent>
-        </Card>
+        </div>
+        <div className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-2">
+          {showSavings ? formatCurrency(stats.totalSavings) : '****'}
+        </div>
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          总储蓄金额
+        </p>
       </div>
 
-      {/* 桌面端三卡片布局 */}
-      <div className="hidden md:grid gap-4 grid-cols-3">
-        <Card className="shadow-card animate-fade-in hover-scale">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3 px-6">
-            <CardTitle className="text-sm font-medium">总余额</CardTitle>
-            <Wallet className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent className="px-6 pb-4">
-            <div className="text-2xl font-bold">{formatCurrency(stats.totalBalance)}</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              所选月份净额（收入-支出）
-            </p>
-          </CardContent>
-        </Card>
+      {/* 本周期结余 - 移动端 */}
+      <div className="md:hidden bg-white dark:bg-gray-900 rounded-2xl p-6 animate-fade-in">
+        <div className="flex items-center gap-2 mb-4">
+          <div className={`w-2 h-2 rounded-full ${netPositive ? 'bg-green-500' : 'bg-red-500'}`}></div>
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">本周期结余</span>
+          {netPositive ? (
+            <TrendingUp className="h-4 w-4 text-green-500" />
+          ) : (
+            <TrendingDown className="h-4 w-4 text-red-500" />
+          )}
+        </div>
+        <div className={`text-3xl font-bold mb-6 ${netPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+          {formatCurrency(netIncome)}
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="text-center">
+            <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">总收入</div>
+            <div className="font-semibold text-green-600 dark:text-green-400">{formatCurrency(stats.monthlyIncome)}</div>
+          </div>
+          <div className="text-center">
+            <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">本周期支出</div>
+            <div className="font-semibold text-red-600 dark:text-red-400">{formatCurrency(stats.monthlyExpense)}</div>
+          </div>
+        </div>
+      </div>
 
-        <Card className="shadow-card animate-fade-in hover-scale">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3 px-6">
-            <CardTitle className="text-sm font-medium">本月收入</CardTitle>
-            <TrendingUp className="h-4 w-4 text-success" />
-          </CardHeader>
-          <CardContent className="px-6 pb-4">
-            <div className="text-2xl font-bold text-success">
-              {formatCurrency(stats.monthlyIncome)}
+      {/* 桌面端三列布局 */}
+      <div className="hidden md:grid gap-6 grid-cols-3">
+        <div className="bg-white dark:bg-gray-900 rounded-2xl p-6 animate-fade-in hover:shadow-lg transition-shadow duration-200">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">总余额</span>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              当前月份收入
-            </p>
-          </CardContent>
-        </Card>
+            <Wallet className="h-5 w-5 text-purple-500" />
+          </div>
+          <div className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+            {formatCurrency(stats.totalBalance)}
+          </div>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            所选周期净额
+          </p>
+        </div>
 
-        <Card className="shadow-card animate-fade-in hover-scale">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3 px-6">
-            <CardTitle className="text-sm font-medium">本月支出</CardTitle>
-            <TrendingDown className="h-4 w-4 text-destructive" />
-          </CardHeader>
-          <CardContent className="px-6 pb-4">
-            <div className="text-2xl font-bold text-destructive">
-              {formatCurrency(stats.monthlyExpense)}
+        <div className="bg-white dark:bg-gray-900 rounded-2xl p-6 animate-fade-in hover:shadow-lg transition-shadow duration-200">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">本周期收入</span>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              当前月份支出
-            </p>
-          </CardContent>
-        </Card>
+            <TrendingUp className="h-5 w-5 text-green-500" />
+          </div>
+          <div className="text-2xl font-bold text-green-600 dark:text-green-400 mb-2">
+            {formatCurrency(stats.monthlyIncome)}
+          </div>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            当前周期收入
+          </p>
+        </div>
+
+        <div className="bg-white dark:bg-gray-900 rounded-2xl p-6 animate-fade-in hover:shadow-lg transition-shadow duration-200">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">本周期支出</span>
+            </div>
+            <TrendingDown className="h-5 w-5 text-red-500" />
+          </div>
+          <div className="text-2xl font-bold text-red-600 dark:text-red-400 mb-2">
+            {formatCurrency(stats.monthlyExpense)}
+          </div>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            当前周期支出
+          </p>
+        </div>
       </div>
     </div>
   );

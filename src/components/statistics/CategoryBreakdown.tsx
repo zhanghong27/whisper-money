@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { ChevronRight, TrendingUp } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import TransactionList from "@/components/transactions/TransactionList";
 
 interface CategoryBreakdownProps {
   transactions: any[];
@@ -51,11 +53,13 @@ const CategoryBreakdown = ({ transactions, categories }: CategoryBreakdownProps)
       };
     }
     
-    categoryStats[categoryName].amount += Number(transaction.amount);
+    // 对于支出类型，使用绝对值进行统计
+    const amountValue = Math.abs(Number(transaction.amount));
+    categoryStats[categoryName].amount += amountValue;
     categoryStats[categoryName].count += 1;
   });
 
-  const categoryData = Object.values(categoryStats);
+  const categoryData = Object.values(categoryStats).sort((a, b) => b.amount - a.amount);
   const totalAmount = categoryData.reduce((sum, cat) => sum + cat.amount, 0);
 
   // Prepare data for pie chart
@@ -68,6 +72,40 @@ const CategoryBreakdown = ({ transactions, categories }: CategoryBreakdownProps)
 
   // Colors for pie chart
   const COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899'];
+
+  // Drilldown dialog state
+  const [open, setOpen] = useState(false);
+  const [activeCategory, setActiveCategory] = useState<{ name: string; color: string; icon: string } | null>(null);
+
+  const openCategory = (cat: CategoryData, color: string) => {
+    setActiveCategory({ name: cat.name, color, icon: cat.icon });
+    setOpen(true);
+  };
+
+  // Prepare transactions for the selected category in dialog
+  const dialogTransactions = useMemo(() => {
+    if (!open || !activeCategory) return [] as any[];
+    const list = transactions
+      .filter(t => (selectedType === '支出' ? t.type === 'expense' : t.type === 'income'))
+      .filter(t => (t.categories?.name || '其他') === activeCategory.name)
+      .map(t => ({
+        id: t.id,
+        amount: Number(t.amount),
+        type: t.type,
+        description: t.description || '',
+        date: t.date,
+        category: {
+          name: t.categories?.name || activeCategory.name,
+          icon: t.categories?.icon || activeCategory.icon,
+          color: t.categories?.color || activeCategory.color,
+        },
+        account: {
+          name: t.accounts?.name || '',
+          icon: t.accounts?.icon || '💰',
+        },
+      }));
+    return list;
+  }, [open, activeCategory, transactions, selectedType]);
 
   return (
     <Card>
@@ -142,7 +180,11 @@ const CategoryBreakdown = ({ transactions, categories }: CategoryBreakdownProps)
               {categoryData.map((category, index) => {
                 const percentage = totalAmount > 0 ? (category.amount / totalAmount * 100) : 0;
                 return (
-                  <div key={category.name} className="flex items-center justify-between">
+                  <button
+                    key={category.name}
+                    className="w-full flex items-center justify-between"
+                    onClick={() => openCategory(category, COLORS[index % COLORS.length])}
+                  >
                     <div className="flex items-center gap-3 flex-1">
                       <div 
                         className="w-8 h-8 rounded-full flex items-center justify-center text-sm"
@@ -170,10 +212,24 @@ const CategoryBreakdown = ({ transactions, categories }: CategoryBreakdownProps)
                       <p className="text-xs text-muted-foreground">{category.count}笔</p>
                     </div>
                     <ChevronRight className="w-4 h-4 text-muted-foreground ml-2" />
-                  </div>
+                  </button>
                 );
               })}
             </div>
+
+            {/* Drilldown dialog */}
+            <Dialog open={open} onOpenChange={setOpen}>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>
+                    {selectedType} · {activeCategory?.name}（{dialogTransactions.length} 笔）
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="max-h-[60vh] overflow-auto">
+                  <TransactionList transactions={dialogTransactions as any} />
+                </div>
+              </DialogContent>
+            </Dialog>
           </>
         ) : (
           <div className="text-center py-8 text-muted-foreground">

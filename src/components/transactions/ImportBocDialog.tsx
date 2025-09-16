@@ -17,6 +17,7 @@ const ImportBocDialog = ({ open, onOpenChange, onImported }: ImportBocDialogProp
   const [fileName, setFileName] = useState<string>("");
   const [password, setPassword] = useState<string>("");
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState<string>("");
   const [importing, setImporting] = useState(false);
   const { toast } = useToast();
 
@@ -26,7 +27,8 @@ const ImportBocDialog = ({ open, onOpenChange, onImported }: ImportBocDialogProp
     setFileName(file.name);
     setLoading(true);
     try {
-      const parsed = await parseBocPdf(file, password || undefined);
+      setProgress('开始解析PDF…');
+      const parsed = await parseBocPdf(file, password || undefined, (msg)=>setProgress(msg));
       setResult(parsed);
       if (!parsed.rows.length) {
         toast({ title: "未解析到记录", description: "请检查PDF与密码是否正确" });
@@ -37,6 +39,7 @@ const ImportBocDialog = ({ open, onOpenChange, onImported }: ImportBocDialogProp
       setResult(null);
     } finally {
       setLoading(false);
+      setProgress("");
     }
   };
 
@@ -45,14 +48,14 @@ const ImportBocDialog = ({ open, onOpenChange, onImported }: ImportBocDialogProp
       .from('accounts')
       .select('*')
       .eq('user_id', userId)
-      .eq('is_deleted', false)
       .limit(50);
     if (error) throw error;
     if (!accounts || accounts.length === 0) throw new Error('未找到任何账户');
-    const bank = accounts.find(a => a.type === 'bank' || a.name.includes('中国银行') || a.name.includes('中行'));
+    // 优先匹配中国银行账户
+    const bank = accounts.find(a => a.name.includes('中国银行') || a.name.includes('中行') || a.name.includes('BOC'));
     if (bank) return bank.id;
-    const cash = accounts.find(a => a.type === 'cash' || a.name.includes('现金'));
-    return (cash || accounts[0]).id;
+    // 如果没有中国银行账户，返回第一个账户而不是现金
+    return accounts[0].id;
   };
 
   const resolveCategoryId = async (userId: string, name: string, type: 'income' | 'expense') => {
@@ -60,7 +63,6 @@ const ImportBocDialog = ({ open, onOpenChange, onImported }: ImportBocDialogProp
       .from('categories')
       .select('*')
       .eq('user_id', userId)
-      .eq('is_deleted', false)
       .eq('name', name)
       .limit(1);
     if (error) throw error;
@@ -85,7 +87,7 @@ const ImportBocDialog = ({ open, onOpenChange, onImported }: ImportBocDialogProp
 
       const accountId = await resolveAccountId(userId);
       const toInsert: any[] = [];
-      let delta = 0;
+      const uniqSet = new Set<string>();
       for (const rec of result.records) {
         // Determine amount and type
         let amt = 0; let type: 'income' | 'expense' = 'expense';
@@ -99,29 +101,50 @@ const ImportBocDialog = ({ open, onOpenChange, onImported }: ImportBocDialogProp
           type = v >= 0 ? 'income' : 'expense';
         }
         if (!amt) continue;
-        const catName = type === 'income' ? '工资' : '购物';
+        const catName = type === 'income' ? '工资' : '其他';
         const categoryId = await resolveCategoryId(userId, catName, type);
         const dateStr = rec.日期;
         const descParts = [rec.摘要, rec.对方信息].filter(Boolean);
         const description = descParts.join(' - ');
+        const fingerprint = `boc|${dateStr} 00:00:00|${Math.round(amt*100)}|${description}`;
+        if (uniqSet.has(fingerprint)) continue;
+        uniqSet.add(fingerprint);
+
         toInsert.push({
           user_id: userId,
           account_id: accountId,
           category_id: categoryId,
-          amount: amt,
+          amount: type === 'income' ? amt : -amt,
           type,
-          date: dateStr,
+          date: dateStr + ' 00:00:00',
           description,
+          source: 'boc',
+          unique_hash: fingerprint,
         });
-        delta += type === 'income' ? amt : -amt;
       }
       if (toInsert.length === 0) {
         toast({ title: '没有可导入的记录' });
         return;
       }
-      const { error: insErr } = await supabase.from('transactions').insert(toInsert);
-      if (insErr) throw insErr;
+      const fps = toInsert.map(r => r.unique_hash);
+      const { data: existed, error: exErr } = await supabase
+        .from('transactions')
+        .select('unique_hash')
+        .in('unique_hash', fps);
+      if (exErr) throw exErr;
+      const existedSet = new Set((existed || []).map(r => r.unique_hash));
+      const filtered = toInsert.filter(r => !existedSet.has(r.unique_hash));
+      if (filtered.length === 0) {
+        toast({ title: '没有可导入的新记录', description: '系统已自动忽略重复交易' });
+        return;
+      }
+      for (let i=0;i<filtered.length;i+=500) {
+        const seg = filtered.slice(i, i+500);
+        const { error: insErr } = await supabase.from('transactions').insert(seg);
+        if (insErr) throw insErr;
+      }
 
+      const delta = filtered.reduce((sum, r) => sum + (r.type === 'income' ? r.amount : -r.amount), 0);
       if (delta !== 0) {
         const { data: accData, error: accErr } = await supabase
           .from('accounts')
@@ -142,7 +165,20 @@ const ImportBocDialog = ({ open, onOpenChange, onImported }: ImportBocDialogProp
       onImported?.();
       onOpenChange(false);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const pickMessage = (e: any) => {
+        try {
+          if (typeof e === 'string') return e;
+          if (e?.message) return e.message;
+          if (e?.details) return e.details;
+          if (e?.error_description) return e.error_description;
+          if (e?.error) return e.error;
+          return JSON.stringify(e);
+        } catch { return String(e); }
+      };
+      let message = pickMessage(err);
+      if (/occurred_at|unique_hash/i.test(message)) {
+        message += '。请先在 Supabase 为 transactions 添加 occurred_at/unique_hash 列，并创建 (user_id, unique_hash) 唯一索引后再试。';
+      }
       toast({ title: '导入失败', description: message, variant: 'destructive' });
     } finally {
       setImporting(false);
@@ -177,6 +213,9 @@ const ImportBocDialog = ({ open, onOpenChange, onImported }: ImportBocDialogProp
               已解析 {result.rows.length} 条记录
             </div>
           )}
+          {progress && (
+            <div className="text-xs text-muted-foreground">{progress}</div>
+          )}
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => onOpenChange(false)}>关闭</Button>
             <Button onClick={onImport} disabled={!result || importing}>
@@ -190,4 +229,3 @@ const ImportBocDialog = ({ open, onOpenChange, onImported }: ImportBocDialogProp
 };
 
 export default ImportBocDialog;
-

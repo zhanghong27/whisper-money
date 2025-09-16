@@ -16,6 +16,7 @@ const ImportCmbDialog = ({ open, onOpenChange, onImported }: ImportCmbDialogProp
   const [result, setResult] = useState<CmbParseResult | null>(null);
   const [fileName, setFileName] = useState<string>("");
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState<string>("");
   const [importing, setImporting] = useState(false);
   const { toast } = useToast();
 
@@ -25,7 +26,8 @@ const ImportCmbDialog = ({ open, onOpenChange, onImported }: ImportCmbDialogProp
     setFileName(file.name);
     setLoading(true);
     try {
-      const parsed = await parseCmbPdf(file);
+      setProgress('开始解析PDF…');
+      const parsed = await parseCmbPdf(file, (msg) => setProgress(msg));
       setResult(parsed);
       if (!parsed.rows.length) {
         toast({ title: "未解析到记录", description: "请检查PDF是否为招商银行交易流水" });
@@ -36,6 +38,7 @@ const ImportCmbDialog = ({ open, onOpenChange, onImported }: ImportCmbDialogProp
       setResult(null);
     } finally {
       setLoading(false);
+      setProgress("");
     }
   };
 
@@ -44,14 +47,14 @@ const ImportCmbDialog = ({ open, onOpenChange, onImported }: ImportCmbDialogProp
       .from('accounts')
       .select('*')
       .eq('user_id', userId)
-      .eq('is_deleted', false)
       .limit(50);
     if (error) throw error;
     if (!accounts || accounts.length === 0) throw new Error('未找到任何账户');
-    const bank = accounts.find(a => a.type === 'bank' || a.name.includes('招') || a.name.includes('银行卡'));
+    // 优先匹配招商银行账户
+    const bank = accounts.find(a => a.name.includes('招商银行') || a.name.includes('招商') || a.name.includes('CMB'));
     if (bank) return bank.id;
-    const cash = accounts.find(a => a.type === 'cash' || a.name.includes('现金'));
-    return (cash || accounts[0]).id;
+    // 如果没有招商银行账户，返回第一个账户而不是现金
+    return accounts[0].id;
   };
 
   const resolveCategoryId = async (userId: string, name: string, type: 'income' | 'expense') => {
@@ -59,7 +62,6 @@ const ImportCmbDialog = ({ open, onOpenChange, onImported }: ImportCmbDialogProp
       .from('categories')
       .select('*')
       .eq('user_id', userId)
-      .eq('is_deleted', false)
       .eq('name', name)
       .limit(1);
     if (error) throw error;
@@ -84,33 +86,54 @@ const ImportCmbDialog = ({ open, onOpenChange, onImported }: ImportCmbDialogProp
 
       const accountId = await resolveAccountId(userId);
       const toInsert: any[] = [];
-      let delta = 0;
+      const uniqSet = new Set<string>();
       for (const rec of result.records) {
         const amt = cmbAmountToNumber(rec['交易金额']);
         const type = amt >= 0 ? 'income' : 'expense';
         const amount = Math.abs(amt);
-        const catName = type === 'income' ? '工资' : '购物';
+        const catName = type === 'income' ? '工资' : '其他';
         const categoryId = await resolveCategoryId(userId, catName, type as 'income' | 'expense');
         const dateStr = rec['记账日期'];
         const desc = `${rec['交易摘要']}` + (rec['对手信息'] ? ` - ${rec['对手信息']}` : '');
+        const fingerprint = `cmb|${dateStr} 00:00:00|${Math.round(amount*100)}|${desc}`;
+        if (uniqSet.has(fingerprint)) continue;
+        uniqSet.add(fingerprint);
+
         toInsert.push({
           user_id: userId,
           account_id: accountId,
           category_id: categoryId,
-          amount,
+          amount: type === 'income' ? amount : -amount,
           type,
-          date: dateStr,
+          date: dateStr + ' 00:00:00',
           description: desc,
+          source: 'cmb',
+          unique_hash: fingerprint,
         });
-        delta += amt; // income positive, expense negative
       }
       if (toInsert.length === 0) {
         toast({ title: '没有可导入的记录' });
         return;
       }
-      const { error: insErr } = await supabase.from('transactions').insert(toInsert);
-      if (insErr) throw insErr;
+      const fps = toInsert.map(r => r.unique_hash);
+      const { data: existed, error: exErr } = await supabase
+        .from('transactions')
+        .select('unique_hash')
+        .in('unique_hash', fps);
+      if (exErr) throw exErr;
+      const existedSet = new Set((existed || []).map(r => r.unique_hash));
+      const filtered = toInsert.filter(r => !existedSet.has(r.unique_hash));
+      if (filtered.length === 0) {
+        toast({ title: '没有可导入的新记录', description: '系统已自动忽略重复交易' });
+        return;
+      }
+      for (let i=0;i<filtered.length;i+=500) {
+        const seg = filtered.slice(i, i+500);
+        const { error: insErr } = await supabase.from('transactions').insert(seg);
+        if (insErr) throw insErr;
+      }
 
+      const delta = filtered.reduce((sum, r) => sum + (r.type === 'income' ? r.amount : -r.amount), 0);
       if (delta !== 0) {
         const { data: accData, error: accErr } = await supabase
           .from('accounts')
@@ -131,7 +154,20 @@ const ImportCmbDialog = ({ open, onOpenChange, onImported }: ImportCmbDialogProp
       onImported?.();
       onOpenChange(false);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const pickMessage = (e: any) => {
+        try {
+          if (typeof e === 'string') return e;
+          if (e?.message) return e.message;
+          if (e?.details) return e.details;
+          if (e?.error_description) return e.error_description;
+          if (e?.error) return e.error;
+          return JSON.stringify(e);
+        } catch { return String(e); }
+      };
+      let message = pickMessage(err);
+      if (/occurred_at|unique_hash/i.test(message)) {
+        message += '。请先在 Supabase 为 transactions 添加 occurred_at/unique_hash 列，并创建 (user_id, unique_hash) 唯一索引后再试。';
+      }
       toast({ title: '导入失败', description: message, variant: 'destructive' });
     } finally {
       setImporting(false);
@@ -158,6 +194,9 @@ const ImportCmbDialog = ({ open, onOpenChange, onImported }: ImportCmbDialogProp
               已解析 {result.rows.length} 条记录
             </div>
           )}
+          {progress && (
+            <div className="text-xs text-muted-foreground">{progress}</div>
+          )}
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => onOpenChange(false)}>关闭</Button>
             <Button onClick={onImport} disabled={!result || importing}>
@@ -171,4 +210,3 @@ const ImportCmbDialog = ({ open, onOpenChange, onImported }: ImportCmbDialogProp
 };
 
 export default ImportCmbDialog;
-

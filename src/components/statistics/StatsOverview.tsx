@@ -10,11 +10,11 @@ const StatsOverview = ({ transactions, accounts }: StatsOverviewProps) => {
   // Calculate statistics
   const totalExpense = transactions
     .filter(t => t.type === 'expense')
-    .reduce((sum, t) => sum + Number(t.amount), 0);
+    .reduce((sum, t) => sum + Math.abs(Number(t.amount)), 0);
   
   const totalIncome = transactions
     .filter(t => t.type === 'income')
-    .reduce((sum, t) => sum + Number(t.amount), 0);
+    .reduce((sum, t) => sum + Math.abs(Number(t.amount)), 0);
   
   const balance = totalIncome - totalExpense;
   
