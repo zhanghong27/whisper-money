@@ -48,9 +48,27 @@ const AddTransactionDialog = ({ open, onOpenChange, onTransactionAdded }: AddTra
   // 转账专用账户选择
   const [fromAccount, setFromAccount] = useState("");
   const [toAccount, setToAccount] = useState("");
+
+  // Helper function to evaluate mathematical expressions
+  const evalExpression = (expr: string): number => {
+    if (!expr.trim()) return 0;
+    try {
+      // Convert Chinese math symbols to JavaScript operators
+      const jsExpr = expr.replace(/×/g, '*').replace(/÷/g, '/');
+      // Simple evaluation - in production use a proper math parser
+      return Function('"use strict"; return (' + jsExpr + ')')();
+    } catch {
+      return parseFloat(expr) || 0;
+    }
+  };
   
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  
+  // Declare these at function level for transfer operations  
+  let outCat: Category | undefined;
+  let inCat: Category | undefined;
+  
   const [search, setSearch] = useState("");
   const [userId, setUserId] = useState<string>("");
   const [usage, setUsage] = useState<Record<string, number>>({});
