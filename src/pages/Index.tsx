@@ -9,6 +9,7 @@ import ImportAlipayDialog from "@/components/transactions/ImportAlipayDialog";
 import ImportWechatDialog from "@/components/transactions/ImportWechatDialog";
 import ImportCmbDialog from "@/components/transactions/ImportCmbDialog";
 import ImportBocDialog from "@/components/transactions/ImportBocDialog";
+import PullToRefresh from "@/components/ui/pull-to-refresh";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 // removed month Input; using unified period navigation
@@ -421,12 +422,15 @@ const Index = () => {
         <DashboardStats stats={stats} />
 
         {/* Recent Transactions */}
-        <div className="space-y-4">
-          <TransactionList 
-            transactions={transactions}
-            onTransactionUpdated={fetchDashboardData}
-          />
-        </div>
+        <PullToRefresh onRefresh={fetchDashboardData}>
+          <div className="space-y-4">
+            <TransactionList 
+              transactions={transactions}
+              onTransactionUpdated={fetchDashboardData}
+              onTransactionDeleted={fetchDashboardData}
+            />
+          </div>
+        </PullToRefresh>
 
         {/* Add Transaction Dialog */}
         <AddTransactionDialog

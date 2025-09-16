@@ -7,6 +7,9 @@ import { format, isThisYear, parseISO } from "date-fns";
 import { zhCN } from "date-fns/locale";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import EditTransactionDialog from "./EditTransactionDialog";
+import SwipeableTransactionItem from "./SwipeableTransactionItem";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 interface Transaction {
   id: string;
@@ -32,9 +35,10 @@ interface Transaction {
 interface TransactionListProps {
   transactions: Transaction[];
   onTransactionUpdated?: () => void;
+  onTransactionDeleted?: () => void;
 }
 
-const TransactionList = ({ transactions, onTransactionUpdated }: TransactionListProps) => {
+const TransactionList = ({ transactions, onTransactionUpdated, onTransactionDeleted }: TransactionListProps) => {
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('zh-CN', {
       style: 'currency',
@@ -152,6 +156,23 @@ const TransactionList = ({ transactions, onTransactionUpdated }: TransactionList
     setEditOpen(true);
   };
 
+  const handleDelete = async (t: Transaction) => {
+    try {
+      const { error } = await supabase
+        .from('transactions')
+        .delete()
+        .eq('id', t.id);
+
+      if (error) throw error;
+
+      toast.success('交易记录已删除');
+      onTransactionDeleted?.();
+    } catch (error) {
+      console.error('删除交易记录失败:', error);
+      toast.error('删除失败，请重试');
+    }
+  };
+
   return (
     <>
       <div className="space-y-4">
@@ -170,63 +191,13 @@ const TransactionList = ({ transactions, onTransactionUpdated }: TransactionList
               {/* Transaction items */}
               <div className="space-y-2">
                 {items.map((transaction) => (
-                  <button
+                  <SwipeableTransactionItem
                     key={transaction.id}
-                    onClick={() => showDetail(transaction)}
-                    className="w-full flex items-center gap-4 bg-white dark:bg-gray-900 rounded-2xl p-4 hover:shadow-md transition-shadow duration-200"
-                  >
-                    <div
-                      className="flex-none w-12 h-12 rounded-xl flex items-center justify-center text-xl"
-                      style={{ backgroundColor: transaction.category.color + '20' }}
-                    >
-                      {transaction.category.icon}
-                    </div>
-                    <div className="min-w-0 flex-1 text-left">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-medium text-gray-900 dark:text-white truncate">
-                          {transaction.description || transaction.category.name}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-                        <span className="whitespace-nowrap">{getSourceIcon(transaction.source)} {getSourceName(transaction.source)}</span>
-                        <span className="opacity-60">•</span>
-                        <span className={`text-xs px-2 py-1 rounded-full ${
-                          transaction.type === 'income' 
-                            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                            : transaction.type === 'expense'
-                            ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                            : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
-                        }`}>
-                          {getTypeText(transaction.type)}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`font-semibold text-lg ${
-                          transaction.type === 'income'
-                            ? 'text-green-600 dark:text-green-400'
-                            : transaction.type === 'expense'
-                            ? 'text-red-600 dark:text-red-400'
-                            : 'text-gray-900 dark:text-white'
-                        }`}
-                      >
-                        {transaction.type === 'income' ? '+' : transaction.type === 'expense' ? '-' : ''}
-                        {formatCurrency(Math.abs(transaction.amount))}
-                      </span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 opacity-60 hover:opacity-100"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleEdit(transaction);
-                        }}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </button>
+                    transaction={transaction}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                    onDetail={showDetail}
+                  />
                 ))}
               </div>
             </div>
