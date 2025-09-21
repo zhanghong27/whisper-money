@@ -138,6 +138,12 @@ const AssetTrendChart = ({ transactions, accounts, currentDate, startDate, endDa
               onMouseMove={(state: any) => {
                 if (state && state.activeTooltipIndex != null) setActiveIndex(state.activeTooltipIndex);
               }}
+              onTouchStart={(state: any) => {
+                if (state && state.activeTooltipIndex != null) setActiveIndex(state.activeTooltipIndex);
+              }}
+              onTouchMove={(state: any) => {
+                if (state && state.activeTooltipIndex != null) setActiveIndex(state.activeTooltipIndex);
+              }}
               onMouseLeave={() => setActiveIndex(null)}
             >
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />

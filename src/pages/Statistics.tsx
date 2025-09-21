@@ -241,7 +241,7 @@ const Statistics = () => {
                 <div className="flex flex-col gap-3">
                   <Calendar
                     mode="range"
-                    selected={customRange.from && customRange.to ? { from: customRange.from, to: customRange.to } : undefined}
+                    selected={customRange}
                     onSelect={(range) => {
                       setCustomRange(range ?? {});
                       if (range?.from && range?.to) {

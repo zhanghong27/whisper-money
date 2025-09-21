@@ -119,26 +119,21 @@ const ImportBocDialog = ({ open, onOpenChange, onImported }: ImportBocDialogProp
           date: dateStr + ' 00:00:00',
           description,
           source: 'boc',
+          unique_hash: fingerprint,
         });
       }
       if (toInsert.length === 0) {
         toast({ title: '没有可导入的记录' });
         return;
       }
-      const fps = toInsert.map(r => `${r.description}-${r.amount}-${r.date}`);
-      const existingTransactions = await supabase
+      const fps = toInsert.map(r => r.unique_hash);
+      const { data: existed, error: exErr } = await supabase
         .from('transactions')
-        .select('description, amount, date')
-        .eq('user_id', userId);
-
-      const existingHashes = new Set(
-        existingTransactions.data?.map(t => `${t.description}-${t.amount}-${t.date}`) || []
-      );
-
-      const filtered = toInsert.filter(r => {
-        const hash = `${r.description}-${r.amount}-${r.date}`;
-        return !existingHashes.has(hash);
-      });
+        .select('unique_hash')
+        .in('unique_hash', fps);
+      if (exErr) throw exErr;
+      const existedSet = new Set((existed || []).map(r => r.unique_hash));
+      const filtered = toInsert.filter(r => !existedSet.has(r.unique_hash));
       if (filtered.length === 0) {
         toast({ title: '没有可导入的新记录', description: '系统已自动忽略重复交易' });
         return;

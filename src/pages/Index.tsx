@@ -9,7 +9,6 @@ import ImportAlipayDialog from "@/components/transactions/ImportAlipayDialog";
 import ImportWechatDialog from "@/components/transactions/ImportWechatDialog";
 import ImportCmbDialog from "@/components/transactions/ImportCmbDialog";
 import ImportBocDialog from "@/components/transactions/ImportBocDialog";
-import PullToRefresh from "@/components/ui/pull-to-refresh";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 // removed month Input; using unified period navigation
@@ -208,7 +207,7 @@ const Index = () => {
 
     const { data: transactionData } = await listQuery;
     
-    const formattedTransactions = (transactionData || []).map((t: any) => ({
+    const formattedTransactions = (transactionData || []).map(t => ({
       id: t.id,
       amount: Number(t.amount),
       type: t.type as 'income' | 'expense' | 'transfer',
@@ -396,7 +395,7 @@ const Index = () => {
                   <div className="flex flex-col gap-3">
                     <Calendar
                       mode="range"
-                      selected={customRange.from && customRange.to ? { from: customRange.from, to: customRange.to } : undefined}
+                      selected={customRange}
                       onSelect={(range) => { setCustomRange(range ?? {}); if (range?.from) setSelectedMonth(range.from); }}
                       numberOfMonths={2}
                       initialFocus
@@ -422,15 +421,12 @@ const Index = () => {
         <DashboardStats stats={stats} />
 
         {/* Recent Transactions */}
-        <PullToRefresh onRefresh={fetchDashboardData}>
-          <div className="space-y-4">
-            <TransactionList 
-              transactions={transactions}
-              onTransactionUpdated={fetchDashboardData}
-              onTransactionDeleted={fetchDashboardData}
-            />
-          </div>
-        </PullToRefresh>
+        <div className="space-y-4">
+          <TransactionList 
+            transactions={transactions}
+            onTransactionUpdated={fetchDashboardData}
+          />
+        </div>
 
         {/* Add Transaction Dialog */}
         <AddTransactionDialog
