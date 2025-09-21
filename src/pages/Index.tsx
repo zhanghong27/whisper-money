@@ -395,7 +395,7 @@ const Index = () => {
                   <div className="flex flex-col gap-3">
                     <Calendar
                       mode="range"
-                      selected={customRange}
+                      selected={customRange.from && customRange.to ? { from: customRange.from, to: customRange.to } : undefined}
                       onSelect={(range) => { setCustomRange(range ?? {}); if (range?.from) setSelectedMonth(range.from); }}
                       numberOfMonths={2}
                       initialFocus

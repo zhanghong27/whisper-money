@@ -239,42 +239,45 @@ export type Database = {
         Row: {
           account_id: string
           amount: number
-          attachment_url: string | null
           category_id: string
           created_at: string
           date: string
           description: string | null
           id: string
-          location: string | null
+          occurred_at: string | null
+          source: string | null
           type: string
+          unique_hash: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
           account_id: string
           amount: number
-          attachment_url?: string | null
           category_id: string
           created_at?: string
           date?: string
           description?: string | null
           id?: string
-          location?: string | null
+          occurred_at?: string | null
+          source?: string | null
           type: string
+          unique_hash?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
           account_id?: string
           amount?: number
-          attachment_url?: string | null
           category_id?: string
           created_at?: string
           date?: string
           description?: string | null
           id?: string
-          location?: string | null
+          occurred_at?: string | null
+          source?: string | null
           type?: string
+          unique_hash?: string | null
           updated_at?: string
           user_id?: string
         }

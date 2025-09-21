@@ -144,7 +144,8 @@ const ImportWechatDialog = ({ open, onOpenChange, onImported }: ImportWechatDial
         const desc = rec['商品'] || rec['交易对方'] || '';
         const tradeId = rec['交易单号'] || '';
         const merchantId = rec['商户单号'] || '';
-        const fingerprint = `wechat|${occurredAt || dateStr}|${Math.round(amount*100)}|${desc}|${tradeId}|${merchantId}`;
+        // Create improved fingerprint for better duplicate detection (without source prefix)
+        const fingerprint = `${dateStr}|${Math.round(amount*100)}|${desc}|${tradeId}|${merchantId}`;
         if (uniqSet.has(fingerprint)) continue;
         uniqSet.add(fingerprint);
 
@@ -157,6 +158,7 @@ const ImportWechatDialog = ({ open, onOpenChange, onImported }: ImportWechatDial
           date: dateStr + ' 00:00:00',
           description: desc,
           source: 'wechat',
+          unique_hash: fingerprint,
         });
       }
       if (toInsert.length === 0) {
@@ -164,15 +166,34 @@ const ImportWechatDialog = ({ open, onOpenChange, onImported }: ImportWechatDial
         return;
       }
 
+      // Check for existing transactions using multiple methods
       const fps = toInsert.map(r => r.unique_hash);
-      const { data: existed, error: exErr } = await supabase
+      
+      // Method 1: Check by unique_hash
+      const { data: existedByHash, error: hashErr } = await supabase
         .from('transactions')
         .select('unique_hash')
         .eq('user_id', userId)
         .in('unique_hash', fps);
-      if (exErr) throw exErr;
-      const existedSet = new Set((existed || []).map(r => r.unique_hash));
-      const newRows = toInsert.filter(r => !existedSet.has(r.unique_hash));
+      if (hashErr) throw hashErr;
+      
+      const existedHashSet = new Set((existedByHash || []).map(r => r.unique_hash));
+      
+      // Method 2: Check by core fields
+      const { data: existedByFields, error: fieldsErr } = await supabase
+        .from('transactions')
+        .select('date, amount, description')
+        .eq('user_id', userId);
+      if (fieldsErr) throw fieldsErr;
+      
+      const existedFieldsSet = new Set((existedByFields || []).map(r => 
+        `${r.date.split(' ')[0]}|${Math.round(Math.abs(r.amount)*100)}|${r.description}`
+      ));
+      
+      const newRows = toInsert.filter(r => 
+        !existedHashSet.has(r.unique_hash) && 
+        !existedFieldsSet.has(r.unique_hash)
+      );
       if (newRows.length === 0) {
         toast({ title: '没有可导入的新记录', description: '系统已自动忽略重复交易' });
         return;

@@ -15,6 +15,20 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
+// Simple expression evaluator for basic math operations
+const evalExpression = (expr: string): number => {
+  if (!expr) return 0;
+  try {
+    // Replace Chinese operators with JavaScript operators
+    const jsExpr = expr.replace(/×/g, '*').replace(/÷/g, '/');
+    // Use Function constructor to safely evaluate simple math expressions
+    const result = new Function('return ' + jsExpr)();
+    return typeof result === 'number' && isFinite(result) ? result : 0;
+  } catch {
+    return 0;
+  }
+};
+
 interface Account {
   id: string;
   name: string;

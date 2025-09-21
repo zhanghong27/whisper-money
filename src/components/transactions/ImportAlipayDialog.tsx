@@ -147,7 +147,8 @@ const ImportAlipayDialog = ({ open, onOpenChange, onImported }: ImportAlipayDial
         const desc = rec['商品说明'] || rec['交易对方'] || '';
         const tradeId = rec['交易订单号'] || '';
         const merchantId = rec['商家订单号'] || '';
-        const fingerprint = `alipay|${occurredAt || dateStr}|${Math.round(amount*100)}|${desc}|${tradeId}|${merchantId}`;
+        // Create improved fingerprint for better duplicate detection (without source prefix)
+        const fingerprint = `${dateStr}|${Math.round(amount*100)}|${desc}|${tradeId}|${merchantId}`;
         if (uniqSet.has(fingerprint)) continue;
         uniqSet.add(fingerprint);
 
@@ -160,6 +161,7 @@ const ImportAlipayDialog = ({ open, onOpenChange, onImported }: ImportAlipayDial
           date: dateStr + ' 00:00:00',
           description: desc,
           source: 'alipay',
+          unique_hash: fingerprint,
         });
 
       }
@@ -169,16 +171,34 @@ const ImportAlipayDialog = ({ open, onOpenChange, onImported }: ImportAlipayDial
         return;
       }
 
-      // Filter out rows already imported (by unique_hash)
+      // Check for existing transactions using multiple methods for better duplicate detection
       const fps = toInsert.map(r => r.unique_hash);
-      const { data: existed, error: exErr } = await supabase
+      
+      // Method 1: Check by unique_hash
+      const { data: existedByHash, error: hashErr } = await supabase
         .from('transactions')
         .select('unique_hash')
         .eq('user_id', userId)
         .in('unique_hash', fps);
-      if (exErr) throw exErr;
-      const existedSet = new Set((existed || []).map(r => r.unique_hash));
-      const newRows = toInsert.filter(r => !existedSet.has(r.unique_hash));
+      if (hashErr) throw hashErr;
+      
+      const existedHashSet = new Set((existedByHash || []).map(r => r.unique_hash));
+      
+      // Method 2: Check by core transaction fields (fallback for existing transactions without unique_hash)
+      const { data: existedByFields, error: fieldsErr } = await supabase
+        .from('transactions')
+        .select('date, amount, description')
+        .eq('user_id', userId);
+      if (fieldsErr) throw fieldsErr;
+      
+      const existedFieldsSet = new Set((existedByFields || []).map(r => 
+        `${r.date}|${Math.round(Math.abs(r.amount)*100)}|${r.description}`
+      ));
+      
+      const newRows = toInsert.filter(r => 
+        !existedHashSet.has(r.unique_hash) && 
+        !existedFieldsSet.has(r.unique_hash)
+      );
       if (newRows.length === 0) {
         toast({ title: '没有可导入的新记录', description: '系统已自动忽略重复交易' });
         return;
