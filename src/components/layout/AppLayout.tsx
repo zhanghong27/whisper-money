@@ -49,7 +49,7 @@ const AppLayout = ({ children, user, onAddTransaction }: AppLayoutProps) => {
               <span className="text-xl">💖</span>
             </div>
             <h1 className="text-xl font-bold bg-gradient-playful bg-clip-text text-transparent">
-              萌萌记账本
+              智能记账本
             </h1>
           </div>
           

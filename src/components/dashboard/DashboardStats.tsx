@@ -36,7 +36,7 @@ const DashboardStats = ({ stats }: DashboardStatsProps) => {
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <span className="text-2xl">💎</span>
-            <span className="text-sm font-medium text-white">萌萌存钱罐</span>
+            <span className="text-sm font-medium text-white">智能存钱罐</span>
           </div>
           <Button
             variant="ghost"
