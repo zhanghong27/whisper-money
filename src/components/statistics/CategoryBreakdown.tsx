@@ -190,62 +190,62 @@ const CategoryBreakdown = ({ transactions, categories, startDate, endDate, selec
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
         <CardTitle className="text-sm font-medium flex items-center gap-2">
           <span className="text-lg">📊</span>
-          支出分类详情
+          支出分类
         </CardTitle>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {/* 金额/占比 Toggle */}
-          <div className="bg-muted rounded-xl p-1 flex">
+          <div className="bg-muted rounded-lg p-0.5 flex">
             <Button 
               size="sm" 
-              variant={displayMode === 'amount' ? 'default' : 'ghost'}
-              className={`rounded-lg px-3 py-1 text-xs transition-all ${
+              variant="ghost"
+              className={`rounded-md px-2 py-1 h-7 text-xs transition-all ${
                 displayMode === 'amount' 
                   ? 'bg-primary text-primary-foreground shadow-sm' 
                   : 'hover:bg-muted-foreground/10'
               }`}
               onClick={() => setDisplayMode('amount')}
             >
-              💰 金额
+              金额
             </Button>
             <Button 
               size="sm" 
-              variant={displayMode === 'percent' ? 'default' : 'ghost'}
-              className={`rounded-lg px-3 py-1 text-xs transition-all ${
+              variant="ghost"
+              className={`rounded-md px-2 py-1 h-7 text-xs transition-all ${
                 displayMode === 'percent' 
                   ? 'bg-primary text-primary-foreground shadow-sm' 
                   : 'hover:bg-muted-foreground/10'
               }`}
               onClick={() => setDisplayMode('percent')}
             >
-              📊 占比
+              占比
             </Button>
           </div>
           
           {/* 环比/同比 Toggle */}
-          <div className="bg-muted rounded-xl p-1 flex">
+          <div className="bg-muted rounded-lg p-0.5 flex">
             <Button 
               size="sm" 
-              variant={compareMode === 'mom' ? 'default' : 'ghost'}
-              className={`rounded-lg px-3 py-1 text-xs transition-all ${
+              variant="ghost"
+              className={`rounded-md px-2 py-1 h-7 text-xs transition-all ${
                 compareMode === 'mom' 
                   ? 'bg-accent text-accent-foreground shadow-sm' 
                   : 'hover:bg-muted-foreground/10'
               }`}
               onClick={() => setCompareMode('mom')}
             >
-              📈 环比
+              环比
             </Button>
             <Button 
               size="sm" 
-              variant={compareMode === 'yoy' ? 'default' : 'ghost'}
-              className={`rounded-lg px-3 py-1 text-xs transition-all ${
+              variant="ghost"
+              className={`rounded-md px-2 py-1 h-7 text-xs transition-all ${
                 compareMode === 'yoy' 
                   ? 'bg-accent text-accent-foreground shadow-sm' 
                   : 'hover:bg-muted-foreground/10'
               }`}
               onClick={() => setCompareMode('yoy')}
             >
-              📅 同比
+              同比
             </Button>
           </div>
         </div>
