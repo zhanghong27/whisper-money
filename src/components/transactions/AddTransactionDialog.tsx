@@ -254,8 +254,7 @@ const AddTransactionDialog = ({ open, onOpenChange, onTransactionAdded }: AddTra
       };
 
       if (type === 'transfer') {
-        if (outCat) bump(outCat.id);
-        if (inCat) bump(inCat.id);
+        // Transfer type doesn't use category bumping for now
       } else if (selectedCategory) {
         bump(selectedCategory);
       }

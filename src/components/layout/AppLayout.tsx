@@ -40,16 +40,16 @@ const AppLayout = ({ children, user, onAddTransaction }: AppLayoutProps) => {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header
-        className="sticky top-0 z-50 w-full border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/60 pointer-events-none"
+        className="sticky top-0 z-50 w-full border-b bg-gradient-soft/95 backdrop-blur supports-[backdrop-filter]:bg-gradient-soft/60 pointer-events-none shadow-soft"
         style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 50px)' }}
       >
         <div className="container flex h-16 items-center justify-between px-4 pointer-events-auto">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-gradient-primary rounded-lg flex items-center justify-center">
-              <span className="text-lg">💰</span>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-playful rounded-2xl flex items-center justify-center shadow-cute animate-pulse">
+              <span className="text-xl">💖</span>
             </div>
-            <h1 className="text-xl font-bold bg-gradient-primary bg-clip-text text-transparent">
-              智慧记账
+            <h1 className="text-xl font-bold bg-gradient-playful bg-clip-text text-transparent">
+              萌萌记账本
             </h1>
           </div>
           
@@ -76,36 +76,36 @@ const AppLayout = ({ children, user, onAddTransaction }: AppLayoutProps) => {
       {onAddTransaction && (
         <Button
           onClick={onAddTransaction}
-          className="fixed right-6 h-14 w-14 rounded-full shadow-money bg-gradient-primary hover:shadow-elevated md:bottom-6 bottom-[calc(env(safe-area-inset-bottom,0px)+80px)]"
+          className="fixed right-6 h-16 w-16 rounded-full shadow-money bg-gradient-playful hover:shadow-elevated hover:scale-110 transition-all duration-300 md:bottom-6 bottom-[calc(env(safe-area-inset-bottom,0px)+80px)] animate-bounce"
           size="icon"
         >
-          <Plus className="h-6 w-6" />
+          <Plus className="h-8 w-8" />
         </Button>
       )}
 
       {/* Bottom Navigation (Mobile) */}
       <nav
-        className="fixed bottom-0 left-0 right-0 bg-card border-t md:hidden"
+        className="fixed bottom-0 left-0 right-0 bg-gradient-soft border-t md:hidden shadow-soft"
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px))' }}
       >
         <div className="flex justify-around py-2">
           <Button 
             variant="ghost" 
             size="sm" 
-            className={`flex flex-col gap-1 h-auto py-2 flex-1 ${location.pathname === '/' ? 'bg-muted' : ''}`}
+            className={`flex flex-col gap-1 h-auto py-3 flex-1 rounded-2xl transition-all duration-300 ${location.pathname === '/' ? 'bg-primary-light text-primary shadow-cute' : 'hover:bg-primary-soft'}`}
             onClick={() => navigate('/')}
           >
-            <BookOpen className="h-4 w-4" />
-            <span className="text-xs">账本</span>
+            <BookOpen className="h-5 w-5" />
+            <span className="text-xs font-medium">💝 账本</span>
           </Button>
           <Button 
             variant="ghost" 
             size="sm" 
-            className={`flex flex-col gap-1 h-auto py-2 flex-1 ${location.pathname === '/statistics' ? 'bg-muted' : ''}`}
+            className={`flex flex-col gap-1 h-auto py-3 flex-1 rounded-2xl transition-all duration-300 ${location.pathname === '/statistics' ? 'bg-accent-light text-accent shadow-cute' : 'hover:bg-accent-soft'}`}
             onClick={() => navigate('/statistics')}
           >
-            <BarChart3 className="h-4 w-4" />
-            <span className="text-xs">统计</span>
+            <BarChart3 className="h-5 w-5" />
+            <span className="text-xs font-medium">📊 统计</span>
           </Button>
         </div>
       </nav>

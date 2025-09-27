@@ -18,10 +18,12 @@ All colors MUST be HSL.
     --popover: 0 0% 100%;
     --popover-foreground: 240 10% 3.9%;
 
-    /* Primary - Money Green */
-    --primary: 160 84% 39%;
+    /* Primary - Playful Money Green */
+    --primary: 155 65% 50%;
     --primary-foreground: 0 0% 98%;
     --primary-glow: 158 64% 52%;
+    --primary-light: 155 65% 85%;
+    --primary-soft: 155 30% 95%;
 
     /* Secondary - Soft Green */
     --secondary: 155 25% 95%;
@@ -31,9 +33,11 @@ All colors MUST be HSL.
     --muted: 210 40% 96.1%;
     --muted-foreground: 215.4 16.3% 46.9%;
 
-    /* Accent - Finance Blue */
-    --accent: 213 94% 68%;
+    /* Accent - Playful Purple */
+    --accent: 270 70% 65%;
     --accent-foreground: 0 0% 98%;
+    --accent-light: 270 70% 90%;
+    --accent-soft: 270 30% 95%;
 
     /* Success - Green Variants */
     --success: 142 76% 36%;
@@ -57,15 +61,20 @@ All colors MUST be HSL.
 
     --radius: 0.75rem;
 
-    /* Gradients */
+    /* Playful Gradients */
     --gradient-primary: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)));
     --gradient-success: linear-gradient(135deg, hsl(var(--success)), hsl(142 69% 58%));
     --gradient-card: linear-gradient(145deg, hsl(0 0% 100%), hsl(0 0% 98%));
+    --gradient-cute: linear-gradient(135deg, hsl(var(--primary-light)), hsl(var(--accent-light)));
+    --gradient-playful: linear-gradient(120deg, hsl(var(--primary)) 0%, hsl(var(--accent)) 50%, hsl(var(--primary-glow)) 100%);
+    --gradient-soft: linear-gradient(135deg, hsl(var(--primary-soft)), hsl(var(--accent-soft)));
     
-    /* Shadows */
-    --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
-    --shadow-elevated: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-    --shadow-money: 0 10px 25px -5px hsl(var(--primary) / 0.2);
+    /* Playful Shadows */
+    --shadow-card: 0 4px 20px -4px hsl(var(--primary) / 0.15);
+    --shadow-elevated: 0 8px 30px -8px hsl(var(--primary) / 0.2);
+    --shadow-money: 0 12px 35px -8px hsl(var(--primary) / 0.25);
+    --shadow-cute: 0 6px 25px -6px hsl(var(--accent) / 0.2);
+    --shadow-soft: 0 2px 12px -2px hsl(var(--primary) / 0.1);
 
     /* Sidebar (keeping original) */
     --sidebar-background: 0 0% 98%;
