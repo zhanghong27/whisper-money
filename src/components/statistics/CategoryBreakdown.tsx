@@ -192,14 +192,61 @@ const CategoryBreakdown = ({ transactions, categories, startDate, endDate, selec
           <span className="text-lg">📊</span>
           支出分类详情
         </CardTitle>
-        <div className="flex gap-2">
-          <div className="flex gap-1">
-            <Button size="sm" variant={displayMode==='amount'? 'default':'outline'} onClick={()=>setDisplayMode('amount')}>金额</Button>
-            <Button size="sm" variant={displayMode==='percent'? 'default':'outline'} onClick={()=>setDisplayMode('percent')}>占比</Button>
+        <div className="flex items-center gap-3">
+          {/* 金额/占比 Toggle */}
+          <div className="bg-muted rounded-xl p-1 flex">
+            <Button 
+              size="sm" 
+              variant={displayMode === 'amount' ? 'default' : 'ghost'}
+              className={`rounded-lg px-3 py-1 text-xs transition-all ${
+                displayMode === 'amount' 
+                  ? 'bg-primary text-primary-foreground shadow-sm' 
+                  : 'hover:bg-muted-foreground/10'
+              }`}
+              onClick={() => setDisplayMode('amount')}
+            >
+              💰 金额
+            </Button>
+            <Button 
+              size="sm" 
+              variant={displayMode === 'percent' ? 'default' : 'ghost'}
+              className={`rounded-lg px-3 py-1 text-xs transition-all ${
+                displayMode === 'percent' 
+                  ? 'bg-primary text-primary-foreground shadow-sm' 
+                  : 'hover:bg-muted-foreground/10'
+              }`}
+              onClick={() => setDisplayMode('percent')}
+            >
+              📊 占比
+            </Button>
           </div>
-          <div className="flex gap-1">
-            <Button size="sm" variant={compareMode==='mom'? 'default':'outline'} onClick={()=>setCompareMode('mom')}>环比</Button>
-            <Button size="sm" variant={compareMode==='yoy'? 'default':'outline'} onClick={()=>setCompareMode('yoy')}>同比</Button>
+          
+          {/* 环比/同比 Toggle */}
+          <div className="bg-muted rounded-xl p-1 flex">
+            <Button 
+              size="sm" 
+              variant={compareMode === 'mom' ? 'default' : 'ghost'}
+              className={`rounded-lg px-3 py-1 text-xs transition-all ${
+                compareMode === 'mom' 
+                  ? 'bg-accent text-accent-foreground shadow-sm' 
+                  : 'hover:bg-muted-foreground/10'
+              }`}
+              onClick={() => setCompareMode('mom')}
+            >
+              📈 环比
+            </Button>
+            <Button 
+              size="sm" 
+              variant={compareMode === 'yoy' ? 'default' : 'ghost'}
+              className={`rounded-lg px-3 py-1 text-xs transition-all ${
+                compareMode === 'yoy' 
+                  ? 'bg-accent text-accent-foreground shadow-sm' 
+                  : 'hover:bg-muted-foreground/10'
+              }`}
+              onClick={() => setCompareMode('yoy')}
+            >
+              📅 同比
+            </Button>
           </div>
         </div>
       </CardHeader>
