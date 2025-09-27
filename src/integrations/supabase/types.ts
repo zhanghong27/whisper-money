@@ -250,6 +250,7 @@ export type Database = {
           unique_hash: string | null
           updated_at: string
           user_id: string
+          is_deleted: boolean
         }
         Insert: {
           account_id: string
@@ -265,6 +266,7 @@ export type Database = {
           unique_hash?: string | null
           updated_at?: string
           user_id: string
+          is_deleted?: boolean
         }
         Update: {
           account_id?: string
@@ -280,6 +282,7 @@ export type Database = {
           unique_hash?: string | null
           updated_at?: string
           user_id?: string
+          is_deleted?: boolean
         }
         Relationships: [
           {

@@ -6,6 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { parseAlipayCsv, AlipayParseResult } from "@/lib/alipay";
 import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
+import { ToastAction } from "@/components/ui/toast";
 
 interface ImportAlipayDialogProps {
   open: boolean;
@@ -114,16 +115,17 @@ const ImportAlipayDialog = ({ open, onOpenChange, onImported }: ImportAlipayDial
       const byKey = new Map<string,string>();
       (allCats||[]).forEach(c => byKey.set(`${c.type}:${c.name}`, c.id));
       const missing = needed.filter(p => !byKey.has(`${p.type}:${p.name}`));
+      const createdCategoryIds: string[] = [];
       if (missing.length) {
         const { data: inserted, error: insCatErr } = await supabase
           .from('categories')
-          .insert(missing.map(m => ({ user_id: userId, name: m.name, type: m.type, icon: '📂', color: '#6B7280' })))
+          .insert(missing.map(m => ({ user_id: userId, name: m.name, type: m.type, icon: '📂', color: '#6B7280', is_system: false })))
           .select('id,name,type');
         if (insCatErr) throw insCatErr;
-        (inserted||[]).forEach(c => byKey.set(`${c.type}:${c.name}`, c.id));
+        (inserted||[]).forEach((c: any) => { byKey.set(`${c.type}:${c.name}`, c.id); createdCategoryIds.push(c.id); });
       }
 
-      // Build rows for insertion with de-dup fingerprint; skip transfers
+      // Build rows for insertion with new de-dup fingerprint; skip transfers
       const toInsert: any[] = [];
       const uniqSet = new Set<string>();
       const normalizeDateTime = (s: string | undefined) => {
@@ -135,6 +137,15 @@ const ImportAlipayDialog = ({ open, onOpenChange, onImported }: ImportAlipayDial
         if (m2) return `${m2[1]} ${m2[2]}:00`;
         return `${s.slice(0,10)} 00:00:00`;
       };
+      const toTsKey = (dt: string) => dt.replace(/[^\d]/g, '');
+      const formatAmountLoose = (n: number) => {
+        const sign = n < 0 ? '-' : '';
+        const abs = Math.abs(n);
+        let s = abs.toFixed(2);
+        if (s.endsWith('.00')) s = s.slice(0, -3);
+        else if (s.endsWith('0')) s = s.slice(0, -1);
+        return sign + s;
+      };
       for (const rec of result.records) {
         const type = rec['收/支'] === '收入' ? 'income' : rec['收/支'] === '支出' ? 'expense' : 'transfer';
         if (type === 'transfer') continue; // skip 不计收支
@@ -143,12 +154,14 @@ const ImportAlipayDialog = ({ open, onOpenChange, onImported }: ImportAlipayDial
         const categoryId = byKey.get(`${type}:${catName}`)!;
         const occurredAt = normalizeDateTime(rec['交易时间']);
         const dateStr = occurredAt ? occurredAt.slice(0,10) : format(new Date(), 'yyyy-MM-dd');
+        const tsKey = toTsKey(occurredAt || `${dateStr} 00:00:00`);
         const amount = Number(rec['金额'] || 0);
         const desc = rec['商品说明'] || rec['交易对方'] || '';
         const tradeId = rec['交易订单号'] || '';
         const merchantId = rec['商家订单号'] || '';
-        // Create improved fingerprint for better duplicate detection (without source prefix)
-        const fingerprint = `${dateStr}|${Math.round(amount*100)}|${desc}|${tradeId}|${merchantId}`;
+        // New fingerprint: 秒级时间戳 + 带符号金额
+        const signed = type === 'income' ? amount : -amount;
+        const fingerprint = `${tsKey}${formatAmountLoose(signed)}`;
         if (uniqSet.has(fingerprint)) continue;
         uniqSet.add(fingerprint);
 
@@ -156,9 +169,10 @@ const ImportAlipayDialog = ({ open, onOpenChange, onImported }: ImportAlipayDial
           user_id: userId,
           account_id: accountId,
           category_id: categoryId,
-          amount: type === 'income' ? amount : -amount,
+          amount: signed,
           type,
           date: dateStr + ' 00:00:00',
+          occurred_at: occurredAt,
           description: desc,
           source: 'alipay',
           unique_hash: fingerprint,
@@ -171,49 +185,67 @@ const ImportAlipayDialog = ({ open, onOpenChange, onImported }: ImportAlipayDial
         return;
       }
 
-      // Check for existing transactions using multiple methods for better duplicate detection
-      const fps = toInsert.map(r => r.unique_hash);
-      
-      // Method 1: Check by unique_hash
+      // Check existing using new + legacy fingerprints, and field-combo fallback
+      const newFps = toInsert.map(r => r.unique_hash);
+      const legacyFps = result.records.map(rec => {
+        const t = rec['收/支'] === '收入' ? 'income' : rec['收/支'] === '支出' ? 'expense' : 'transfer';
+        if (t === 'transfer') return null;
+        const amt = Number(rec['金额'] || 0);
+        const signed = t === 'income' ? amt : -amt;
+        const d = normalizeDateTime(rec['交易时间']);
+        const dStr = (d ? d.slice(0,10) : format(new Date(), 'yyyy-MM-dd'));
+        const _desc = rec['商品说明'] || rec['交易对方'] || '';
+        const _tradeId = rec['交易订单号'] || '';
+        const _merchantId = rec['商家订单号'] || '';
+        return `${dStr}|${Math.round(signed*100)}|${_desc}|${_tradeId}|${_merchantId}`;
+      }).filter(Boolean) as string[];
+
       const { data: existedByHash, error: hashErr } = await supabase
         .from('transactions')
         .select('unique_hash')
         .eq('user_id', userId)
-        .in('unique_hash', fps);
+        .in('unique_hash', Array.from(new Set([...newFps, ...legacyFps])));
       if (hashErr) throw hashErr;
-      
       const existedHashSet = new Set((existedByHash || []).map(r => r.unique_hash));
-      
-      // Method 2: Check by core transaction fields (fallback for existing transactions without unique_hash)
+
       const { data: existedByFields, error: fieldsErr } = await supabase
         .from('transactions')
         .select('date, amount, description')
         .eq('user_id', userId);
       if (fieldsErr) throw fieldsErr;
-      
-      const existedFieldsSet = new Set((existedByFields || []).map(r => 
-        `${r.date}|${Math.round(Math.abs(r.amount)*100)}|${r.description}`
-      ));
-      
-      const newRows = toInsert.filter(r => 
-        !existedHashSet.has(r.unique_hash) && 
-        !existedFieldsSet.has(r.unique_hash)
-      );
+      const existedFieldsSet = new Set((existedByFields || []).map(r => {
+        const d = (r.date || '').toString().split(' ')[0];
+        const cents = Math.round(Math.abs(Number(r.amount))*100);
+        return `${d}|${cents}|${r.description || ''}`;
+      }));
+
+      const newRows = toInsert.filter(r => {
+        if (existedHashSet.has(r.unique_hash)) return false;
+        const d = r.date.split(' ')[0];
+        const cents = Math.round(Math.abs(Number(r.amount))*100);
+        const sig = `${d}|${cents}|${r.description || ''}`;
+        return !existedFieldsSet.has(sig);
+      });
       if (newRows.length === 0) {
         toast({ title: '没有可导入的新记录', description: '系统已自动忽略重复交易' });
         return;
       }
 
-      // 分片插入
+      // 分片插入并收集插入ID
+      const insertedIds: string[] = [];
       const chunk = 500;
       for (let i=0;i<newRows.length;i+=chunk) {
         const seg = newRows.slice(i, i+chunk);
-        const { error: insErr } = await supabase.from('transactions').insert(seg);
+        const { data: inserted, error: insErr } = await supabase
+          .from('transactions')
+          .insert(seg)
+          .select('id');
         if (insErr) throw insErr;
+        inserted?.forEach((row: any) => insertedIds.push(row.id));
       }
 
       // Recompute delta only from new rows
-      const delta = newRows.reduce((sum, r) => sum + (r.type === 'income' ? r.amount : -r.amount), 0);
+      const delta = newRows.reduce((sum, r) => sum + Number(r.amount), 0);
 
       // Update account balance if any delta
       if (delta !== 0) {
@@ -233,7 +265,66 @@ const ImportAlipayDialog = ({ open, onOpenChange, onImported }: ImportAlipayDial
         if (updErr) throw updErr;
       }
 
-      toast({ title: `导入成功`, description: `已导入 ${newRows.length} 条新记录（重复已忽略）` });
+      // 撤回提示（5 秒内）
+      let undone = false;
+      toast({
+        title: `导入成功`,
+        description: `已导入 ${newRows.length} 条新记录（5 秒内可撤回）` ,
+        duration: 5000,
+        action: (
+          <ToastAction altText="撤回" asChild>
+            <button onClick={async () => {
+              if (undone) return; undone = true;
+              try {
+                if (insertedIds.length) {
+                  await supabase
+                    .from('transactions')
+                    .delete()
+                    .in('id', insertedIds)
+                    .eq('user_id', userId);
+                }
+                if (delta !== 0) {
+                  const { data: accData, error: accErr } = await supabase
+                    .from('accounts')
+                    .select('id, balance')
+                    .eq('id', accountId)
+                    .single();
+                  if (!accErr && accData) {
+                    const current = Number(accData.balance || 0);
+                    const revert = current - delta;
+                    await supabase
+                      .from('accounts')
+                      .update({ balance: revert })
+                      .eq('id', accountId);
+                  }
+                }
+                if (createdCategoryIds.length) {
+                  const { data: catUse } = await supabase
+                    .from('transactions')
+                    .select('category_id')
+                    .eq('user_id', userId)
+                    .in('category_id', createdCategoryIds);
+                  const used = new Set((catUse || []).map((r: any) => r.category_id));
+                  const deletable = createdCategoryIds.filter(id => !used.has(id));
+                  if (deletable.length) {
+                    await supabase
+                      .from('categories')
+                      .delete()
+                      .in('id', deletable)
+                      .eq('user_id', userId)
+                      .eq('is_system', false);
+                  }
+                }
+                onImported?.();
+                toast({ title: '已撤回导入', duration: 1000 });
+              } catch (e) {
+                toast({ title: '撤回失败', description: (e as any)?.message || String(e), variant: 'destructive', duration: 2000 });
+              }
+            }}>撤回</button>
+          </ToastAction>
+        )
+      });
+
       onImported?.();
       onOpenChange(false);
     } catch (err) {

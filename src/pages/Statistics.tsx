@@ -11,10 +11,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChevronLeft, ChevronRight, User } from "lucide-react";
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, startOfYear, endOfYear, addDays, differenceInCalendarDays, startOfQuarter, endOfQuarter } from 'date-fns';
 import StatsOverview from "@/components/statistics/StatsOverview";
-import ExpenseChart from "@/components/statistics/ExpenseChart";
+// import ExpenseChart from "@/components/statistics/ExpenseChart"; // removed: replaced by 收支结余图
 import AssetTrendChart from "@/components/statistics/AssetTrendChart";
 import CategoryBreakdown from "@/components/statistics/CategoryBreakdown";
 import MonthlySummary from "@/components/statistics/MonthlySummary";
+import IncomeExpenseNetChart from "@/components/statistics/IncomeExpenseNetChart";
 
 const Statistics = () => {
   const { user } = useAuth();
@@ -58,21 +59,28 @@ const Statistics = () => {
     // Fetch transactions for the selected period
     const { start, end } = getDateRange();
 
-    let query = supabase
-      .from('transactions')
-      .select(`
-        *,
-        categories (name, icon, color),
-        accounts (name, icon)
-      `)
-      .eq('user_id', user.id)
-      .order('date', { ascending: true });
+    const selectFields = `
+      *,
+      categories (name, icon, color),
+      accounts (name, icon)
+    `;
+    const buildTxQuery = (withSoftDelete: boolean) => {
+      let q = supabase
+        .from('transactions')
+        .select(selectFields)
+        .eq('user_id', user.id)
+        .order('date', { ascending: true });
+      if (withSoftDelete) q = q.eq('is_deleted', false);
+      if (start && end) q = q.gte('date', format(start, 'yyyy-MM-dd')).lte('date', format(end, 'yyyy-MM-dd'));
+      return q;
+    };
 
-    if (start && end) {
-      query = query.gte('date', format(start, 'yyyy-MM-dd')).lte('date', format(end, 'yyyy-MM-dd'));
+    let { data: transactionData, error: txErr } = await buildTxQuery(true);
+    if (txErr) {
+      const fb = await buildTxQuery(false);
+      const res = await fb;
+      transactionData = res.data || [];
     }
-
-    const { data: transactionData } = await query;
 
     const { data: accountData } = await supabase
       .from('accounts')
@@ -328,10 +336,9 @@ const Statistics = () => {
           accounts={accounts}
         />
 
-        {/* Expense Chart (Screenshot 1) */}
-        <ExpenseChart 
+        {/* Income vs Expense + Net line */}
+        <IncomeExpenseNetChart
           transactions={transactions}
-          currentDate={currentDate}
           startDate={getDateRange().start}
           endDate={getDateRange().end}
           selectedPeriod={selectedPeriod}
@@ -351,6 +358,9 @@ const Statistics = () => {
         <CategoryBreakdown 
           transactions={transactions}
           categories={categories}
+          startDate={getDateRange().start}
+          endDate={getDateRange().end}
+          selectedPeriod={selectedPeriod}
         />
 
         {/* Monthly Summary (Screenshot 4) */}

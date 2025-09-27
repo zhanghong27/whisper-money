@@ -14,6 +14,7 @@ import { zhCN } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -171,18 +172,101 @@ const EditTransactionDialog = ({ open, onOpenChange, transaction, onTransactionU
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("用户未登录");
-
-      const { error } = await supabase
+      // 软删除：标记 is_deleted=true，并保留 id 以便撤回
+      const { data: backupRow, error: fetchErr } = await supabase
         .from('transactions')
-        .delete()
+        .select('*')
+        .eq('id', transaction.id)
+        .eq('user_id', user.id)
+        .single();
+      if (fetchErr) throw fetchErr;
+      const { error: updErr } = await supabase
+        .from('transactions')
+        .update({ is_deleted: true })
         .eq('id', transaction.id)
         .eq('user_id', user.id);
+      if (updErr) throw updErr;
 
-      if (error) throw error;
+      // 回滚账户余额
+      try {
+        const amt = Math.abs(Number(backupRow.amount || 0));
+        let deltaBal = 0;
+        if (backupRow.type === 'income') deltaBal = -amt;
+        else if (backupRow.type === 'expense') deltaBal = +amt;
+        if (deltaBal !== 0) {
+          const { data: accData, error: accErr } = await supabase
+            .from('accounts')
+            .select('id, balance')
+            .eq('id', backupRow.account_id)
+            .single();
+          if (!accErr && accData) {
+            const newBalance = Number(accData.balance || 0) + deltaBal;
+            const { error: balErr } = await supabase
+              .from('accounts')
+              .update({ balance: newBalance })
+              .eq('id', backupRow.account_id);
+            if (balErr) console.error('Balance rollback failed:', balErr);
+          }
+        }
+      } catch (e) {
+        console.error('Rollback balance error:', e);
+      }
 
+      // 展示可撤回的提示（5 秒内）
+      let undoValid = true;
+      setTimeout(() => { undoValid = false; }, 5000);
       toast({
         title: "交易记录已删除",
-        description: "交易记录已成功删除",
+        description: "5 秒内可撤回",
+        duration: 5000,
+        action: (
+          <ToastAction altText="撤回" asChild>
+            <button onClick={async () => {
+              try {
+                if (!undoValid) return;
+                if (!backupRow) return;
+                // 撤回：将 is_deleted=false
+                const { error: undoErr } = await supabase
+                  .from('transactions')
+                  .update({ is_deleted: false })
+                  .eq('id', backupRow.id)
+                  .eq('user_id', user.id);
+                if (undoErr) throw undoErr;
+
+                // 撤回时恢复账户余额
+                try {
+                  const amt = Math.abs(Number(backupRow.amount || 0));
+                  let deltaBal = 0;
+                  if (backupRow.type === 'income') deltaBal = +amt;
+                  else if (backupRow.type === 'expense') deltaBal = -amt;
+                  if (deltaBal !== 0) {
+                    const { data: accData, error: accErr } = await supabase
+                      .from('accounts')
+                      .select('id, balance')
+                      .eq('id', backupRow.account_id)
+                      .single();
+                    if (!accErr && accData) {
+                      const newBalance = Number(accData.balance || 0) + deltaBal;
+                      const { error: balErr } = await supabase
+                        .from('accounts')
+                        .update({ balance: newBalance })
+                        .eq('id', backupRow.account_id);
+                      if (balErr) console.error('Balance restore failed:', balErr);
+                    }
+                  }
+                } catch (e) {
+                  console.error('Restore balance error:', e);
+                }
+                onTransactionUpdated();
+                // 撤回成功：1s 自动消失
+                toast({ title: '已撤回删除的交易', duration: 1000 });
+              } catch (e) {
+                console.error('Undo failed:', e);
+                toast({ title: '撤回失败', description: (e as any)?.message || String(e), variant: 'destructive', duration: 2000 });
+              }
+            }}>撤回</button>
+          </ToastAction>
+        ),
       });
 
       onTransactionUpdated();
@@ -444,7 +528,7 @@ const EditTransactionDialog = ({ open, onOpenChange, transaction, onTransactionU
           <AlertDialogHeader>
             <AlertDialogTitle>确认删除</AlertDialogTitle>
             <AlertDialogDescription>
-              您确定要删除这条交易记录吗？此操作无法撤销。
+              您确定要删除这条交易记录吗？删除后可在短时间内撤回。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

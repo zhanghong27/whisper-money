@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { parseBocPdf, bocAmountToNumber, BocParseResult } from "@/lib/boc";
 import { supabase } from "@/integrations/supabase/client";
+import { ToastAction } from "@/components/ui/toast";
 
 interface ImportBocDialogProps {
   open: boolean;
@@ -66,14 +67,14 @@ const ImportBocDialog = ({ open, onOpenChange, onImported }: ImportBocDialogProp
       .eq('name', name)
       .limit(1);
     if (error) throw error;
-    if (categories && categories.length > 0) return categories[0].id;
+    if (categories && categories.length > 0) return { id: categories[0].id, created: false };
     const { data, error: insErr } = await supabase
       .from('categories')
-      .insert({ user_id: userId, name, type, icon: '📂', color: '#6B7280' })
+      .insert({ user_id: userId, name, type, icon: '📂', color: '#6B7280', is_system: false })
       .select('id')
       .single();
     if (insErr) throw insErr;
-    return data.id as string;
+    return { id: data.id as string, created: true };
   };
 
   const onImport = async () => {
@@ -86,8 +87,14 @@ const ImportBocDialog = ({ open, onOpenChange, onImported }: ImportBocDialogProp
       const userId = userData.user.id;
 
       const accountId = await resolveAccountId(userId);
+      const createdCategoryIds: string[] = [];
       const toInsert: any[] = [];
       const uniqSet = new Set<string>();
+      const toYmd = (s: string) => s.replace(/[^\d]/g, '').slice(0,8); // YYYYMMDD
+      const moneyToFixed2 = (n: number) => {
+        const sign = n < 0 ? '-' : '';
+        return sign + Math.abs(n).toFixed(2);
+      };
       for (const rec of result.records) {
         // Determine amount and type
         let amt = 0; let type: 'income' | 'expense' = 'expense';
@@ -102,12 +109,20 @@ const ImportBocDialog = ({ open, onOpenChange, onImported }: ImportBocDialogProp
         }
         if (!amt) continue;
         const catName = type === 'income' ? '工资' : '其他';
-        const categoryId = await resolveCategoryId(userId, catName, type);
+        const catRes = await resolveCategoryId(userId, catName, type);
+        const categoryId = catRes.id;
+        if (catRes.created) createdCategoryIds.push(categoryId);
         const dateStr = rec.日期;
         const descParts = [rec.摘要, rec.对方信息].filter(Boolean);
         const description = descParts.join(' - ');
-        // Create fingerprint based on core transaction data (date, amount, description) - ignore type
-        const fingerprint = `${dateStr}|${Math.round(amt*100)}|${description}`;
+        // New fingerprint: 记账日期(YYYYMMDD) + 带符号金额(两位小数) + 余额(两位小数)
+        const ymd = toYmd(dateStr);
+        const balanceRaw = (rec.余额 ?? '').toString();
+        const hasBalance = balanceRaw.trim().length > 0;
+        const balanceNum = hasBalance ? bocAmountToNumber(balanceRaw) : 0;
+        const fingerprint = hasBalance
+          ? `${ymd}${moneyToFixed2(type === 'income' ? amt : -amt)}${moneyToFixed2(balanceNum)}`
+          : `${dateStr}|${Math.round(Math.abs(amt)*100)}|${description}`; // fallback to legacy style when no balance available
         if (uniqSet.has(fingerprint)) continue;
         uniqSet.add(fingerprint);
 
@@ -118,6 +133,7 @@ const ImportBocDialog = ({ open, onOpenChange, onImported }: ImportBocDialogProp
           amount: type === 'income' ? amt : -amt,
           type,
           date: dateStr + ' 00:00:00',
+          occurred_at: dateStr + ' 00:00:00',
           description,
           source: 'boc',
           unique_hash: fingerprint,
@@ -127,45 +143,60 @@ const ImportBocDialog = ({ open, onOpenChange, onImported }: ImportBocDialogProp
         toast({ title: '没有可导入的记录' });
         return;
       }
-      // Check for existing transactions using multiple methods
-      const fps = toInsert.map(r => r.unique_hash);
-      
-      // Method 1: Check by unique_hash  
+      // Check existing: new + legacy fingerprints (for old runs or missing balance) + field-combo fallback
+      const newFps = toInsert.map(r => r.unique_hash);
+      const legacyFps = result.records.map(rec => {
+        let _amt = 0; let _type: 'income' | 'expense' = 'expense';
+        const d = bocAmountToNumber(rec.贷方金额);
+        const c = bocAmountToNumber(rec.借方金额);
+        if (d > 0) { _amt = d; _type = 'income'; }
+        else if (c > 0) { _amt = c; _type = 'expense'; }
+        else { const v = bocAmountToNumber(rec.金额); _amt = Math.abs(v); _type = v >= 0 ? 'income' : 'expense'; }
+        const ds = rec.日期;
+        const des = [rec.摘要, rec.对方信息].filter(Boolean).join(' - ');
+        return `${ds}|${Math.round(Math.abs(_amt)*100)}|${des}`;
+      });
+
       const { data: existedByHash, error: hashErr } = await supabase
         .from('transactions')
         .select('unique_hash')
         .eq('user_id', userId)
-        .in('unique_hash', fps);
+        .in('unique_hash', Array.from(new Set([...newFps, ...legacyFps])));
       if (hashErr) throw hashErr;
-      
       const existedHashSet = new Set((existedByHash || []).map(r => r.unique_hash));
-      
-      // Method 2: Check by core fields
+
       const { data: existedByFields, error: fieldsErr } = await supabase
         .from('transactions')
         .select('date, amount, description')
         .eq('user_id', userId);
       if (fieldsErr) throw fieldsErr;
-      
-      const existedFieldsSet = new Set((existedByFields || []).map(r => 
-        `${r.date.split(' ')[0]}|${Math.round(Math.abs(r.amount)*100)}|${r.description}`
-      ));
-      
-      const filtered = toInsert.filter(r => 
-        !existedHashSet.has(r.unique_hash) && 
-        !existedFieldsSet.has(r.unique_hash)
-      );
+      const existedFieldsSet = new Set((existedByFields || []).map(r => {
+        const d = (r.date || '').toString().split(' ')[0];
+        const cents = Math.round(Math.abs(Number(r.amount))*100);
+        return `${d}|${cents}|${r.description || ''}`;
+      }));
+
+      const filtered = toInsert.filter(r => {
+        if (existedHashSet.has(r.unique_hash)) return false;
+        const d = r.date.split(' ')[0];
+        const cents = Math.round(Math.abs(Number(r.amount))*100);
+        const sig = `${d}|${cents}|${r.description || ''}`;
+        return !existedFieldsSet.has(sig);
+      });
       if (filtered.length === 0) {
         toast({ title: '没有可导入的新记录', description: '系统已自动忽略重复交易' });
         return;
       }
+      const insertedIds: string[] = [];
       for (let i=0;i<filtered.length;i+=500) {
         const seg = filtered.slice(i, i+500);
-        const { error: insErr } = await supabase.from('transactions').insert(seg);
+        const { data: inserted, error: insErr } = await supabase
+          .from('transactions').insert(seg).select('id');
         if (insErr) throw insErr;
+        inserted?.forEach((row: any) => insertedIds.push(row.id));
       }
 
-      const delta = filtered.reduce((sum, r) => sum + (r.type === 'income' ? r.amount : -r.amount), 0);
+      const delta = filtered.reduce((sum, r) => sum + Number(r.amount), 0);
       if (delta !== 0) {
         const { data: accData, error: accErr } = await supabase
           .from('accounts')
@@ -182,7 +213,65 @@ const ImportBocDialog = ({ open, onOpenChange, onImported }: ImportBocDialogProp
         if (updErr) throw updErr;
       }
 
-      toast({ title: `导入成功`, description: `已导入 ${toInsert.length} 条记录` });
+      let undone = false;
+      toast({
+        title: `导入成功`,
+        description: `已导入 ${filtered.length} 条记录（5 秒内可撤回）`,
+        duration: 5000,
+        action: (
+          <ToastAction altText="撤回" asChild>
+            <button onClick={async () => {
+              if (undone) return; undone = true;
+              try {
+                if (insertedIds.length) {
+                  await supabase
+                    .from('transactions')
+                    .delete()
+                    .in('id', insertedIds)
+                    .eq('user_id', userId);
+                }
+                if (delta !== 0) {
+                  const { data: accData, error: accErr } = await supabase
+                    .from('accounts')
+                    .select('id, balance')
+                    .eq('id', accountId)
+                    .single();
+                  if (!accErr && accData) {
+                    const current = Number(accData.balance || 0);
+                    const revert = current - delta;
+                    await supabase
+                      .from('accounts')
+                      .update({ balance: revert })
+                      .eq('id', accountId);
+                  }
+                }
+                // Remove newly created categories if now unused
+                if (createdCategoryIds.length) {
+                  const { data: catUse } = await supabase
+                    .from('transactions')
+                    .select('category_id')
+                    .eq('user_id', userId)
+                    .in('category_id', createdCategoryIds);
+                  const used = new Set((catUse || []).map((r: any) => r.category_id));
+                  const deletable = createdCategoryIds.filter(id => !used.has(id));
+                  if (deletable.length) {
+                    await supabase
+                      .from('categories')
+                      .delete()
+                      .in('id', deletable)
+                      .eq('user_id', userId)
+                      .eq('is_system', false);
+                  }
+                }
+                onImported?.();
+                toast({ title: '已撤回导入', duration: 1000 });
+              } catch (e) {
+                toast({ title: '撤回失败', description: (e as any)?.message || String(e), variant: 'destructive', duration: 2000 });
+              }
+            }}>撤回</button>
+          </ToastAction>
+        )
+      });
       onImported?.();
       onOpenChange(false);
     } catch (err) {

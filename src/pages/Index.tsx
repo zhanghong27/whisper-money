@@ -122,24 +122,28 @@ const Index = () => {
 
     const { start, end } = getDateRange();
     
-    // Single optimized query to get all needed data
-    let allTransactionsQuery = supabase
-      .from('transactions')
-      .select('amount, type, date')
-      .eq('user_id', user.id);
-    
-    if (end) {
-      allTransactionsQuery = allTransactionsQuery.lte('date', format(end, 'yyyy-MM-dd'));
+    // Single optimized query to get all needed data (with soft-delete fallback)
+    const buildAllTxQuery = (withSoftDelete: boolean) => {
+      let q = supabase
+        .from('transactions')
+        .select('amount, type, date')
+        .eq('user_id', user.id);
+      if (withSoftDelete) q = q.eq('is_deleted', false);
+      if (end) q = q.lte('date', format(end, 'yyyy-MM-dd'));
+      return q;
+    };
+    let { data: allTransactions, error: txErr } = await buildAllTxQuery(true);
+    if (txErr) {
+      // Fallback for environments where is_deleted column not present yet
+      const fallback = await buildAllTxQuery(false);
+      const fb = await fallback;
+      allTransactions = fb.data || [];
     }
-    
-    const [{ data: allTransactions }, { data: accounts }] = await Promise.all([
-      allTransactionsQuery,
-      supabase
-        .from('accounts')
-        .select('currency')
-        .eq('user_id', user.id)
-        .limit(1)
-    ]);
+    const { data: accounts } = await supabase
+      .from('accounts')
+      .select('currency')
+      .eq('user_id', user.id)
+      .limit(1);
 
     if (!allTransactions) return;
 
@@ -183,29 +187,40 @@ const Index = () => {
 
     const { start, end } = getDateRange();
 
-    let listQuery = supabase
-      .from('transactions')
-      .select(`
-        id,
-        amount,
-        type,
-        description,
-        date,
-        source,
-        category_id,
-        account_id,
-        categories (name, icon, color),
-        accounts (name, icon)
-      `)
-      .eq('user_id', user.id)
-      .order('date', { ascending: false })
-      .limit(100);
+    const selectFields = `
+      id,
+      amount,
+      type,
+      description,
+      date,
+      source,
+      category_id,
+      account_id,
+      categories (name, icon, color),
+      accounts (name, icon)
+    `;
+    const buildListQuery = (withSoftDelete: boolean) => {
+      let q = supabase
+        .from('transactions')
+        .select(selectFields)
+        .eq('user_id', user.id)
+        .order('date', { ascending: false })
+        .limit(100);
+      if (withSoftDelete) q = q.eq('is_deleted', false);
+      return q;
+    };
+    let listQuery = buildListQuery(true);
 
     if (start && end) {
       listQuery = listQuery.gte('date', format(start, 'yyyy-MM-dd')).lte('date', format(end, 'yyyy-MM-dd'));
     }
 
-    const { data: transactionData } = await listQuery;
+    let { data: transactionData, error: listErr } = await listQuery;
+    if (listErr) {
+      const fb = await buildListQuery(false);
+      const res = await fb;
+      transactionData = res.data || [];
+    }
     
     const formattedTransactions = (transactionData || []).map(t => ({
       id: t.id,

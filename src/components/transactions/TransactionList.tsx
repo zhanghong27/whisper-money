@@ -173,7 +173,7 @@ const TransactionList = ({ transactions, onTransactionUpdated }: TransactionList
                   <button
                     key={transaction.id}
                     onClick={() => showDetail(transaction)}
-                    className="w-full flex items-center gap-4 bg-white dark:bg-gray-900 rounded-2xl p-4 hover:shadow-md transition-shadow duration-200"
+                    className="w-full flex items-center gap-4 bg-white dark:bg-gray-900 rounded-2xl p-4 hover:shadow-md transition-shadow duration-200 min-h-[76px]"
                   >
                     <div
                       className="flex-none w-12 h-12 rounded-xl flex items-center justify-center text-xl"
@@ -181,14 +181,16 @@ const TransactionList = ({ transactions, onTransactionUpdated }: TransactionList
                     >
                       {transaction.category.icon}
                     </div>
-                    <div className="min-w-0 flex-1 text-left">
+                    <div className="min-w-0 flex-1 text-left pr-2">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="font-medium text-gray-900 dark:text-white truncate">
                           {transaction.description || transaction.category.name}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-                        <span className="whitespace-nowrap">{getSourceIcon(transaction.source)} {getSourceName(transaction.source)}</span>
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-gray-500 dark:text-gray-400">
+                        <span className="max-w-[60%] truncate flex items-center">
+                          {getSourceIcon(transaction.source)} {getSourceName(transaction.source)}
+                        </span>
                         <span className="opacity-60">•</span>
                         <span className={`text-xs px-2 py-1 rounded-full ${
                           transaction.type === 'income' 
@@ -201,9 +203,9 @@ const TransactionList = ({ transactions, onTransactionUpdated }: TransactionList
                         </span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-col items-end gap-1 flex-none min-w-[120px] text-right">
                       <span
-                        className={`font-semibold text-lg ${
+                        className={`font-semibold md:text-xl text-base whitespace-nowrap leading-none ${
                           transaction.type === 'income'
                             ? 'text-green-600 dark:text-green-400'
                             : transaction.type === 'expense'
@@ -217,7 +219,7 @@ const TransactionList = ({ transactions, onTransactionUpdated }: TransactionList
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 opacity-60 hover:opacity-100"
+                        className="h-7 w-7 opacity-60 hover:opacity-100"
                         onClick={(e) => {
                           e.stopPropagation();
                           handleEdit(transaction);

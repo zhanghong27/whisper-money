@@ -6,7 +6,8 @@ import type {
 } from "@/components/ui/toast"
 
 const TOAST_LIMIT = 1
-const TOAST_REMOVE_DELAY = 1000000
+// Remove closed toast nodes shortly after they are dismissed to avoid lingering
+const TOAST_REMOVE_DELAY = 2500
 
 type ToasterToast = ToastProps & {
   id: string
